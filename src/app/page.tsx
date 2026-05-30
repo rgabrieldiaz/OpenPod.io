@@ -23,24 +23,44 @@ export default function Home() {
     disconnectWallet,
     switchNetwork,
     voteInCompetition,
+    resolveCompetition,
+    claimRewards,
+    useCompetitionDetails,
+    useUserVoteSelection,
+    useHasClaimedReward,
     isVoting,
   } = useMonadProvider()
+
+  // On-chain competition ID
+  const competitionId = 1n
+
+  // Fetch real-time on-chain competition state if available
+  const { details: compDetails, refetch: refetchCompDetails } = useCompetitionDetails(competitionId)
+  const { voterSelection, refetch: refetchVoteSelection } = useUserVoteSelection(competitionId, address)
+  const { hasClaimed, refetch: refetchClaimed } = useHasClaimedReward(competitionId, address)
+
+  const totalPoolNumber = compDetails ? Number(formatUnits(compDetails.totalPool, 18)) : 1420.5
 
   const [faucetLoading, setFaucetLoading] = useState(false)
   const [faucetResult, setFaucetResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
   
   // Voting status tracker
   const [voteResult, setVoteResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
+  const [claimResult, setClaimResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
+  const [resolveResult, setResolveResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
+  const [isResolving, setIsResolving] = useState(false)
+  const [isClaiming, setIsClaiming] = useState(false)
+
+  // Real-time lifecycle states
+  const [isExpired, setIsExpired] = useState(false)
+  const [txCount, setTxCount] = useState(248)
 
   // Fetch balance for connected account
   const { data: balanceData, refetch: refetchBalance } = useBalance({
     address,
   })
 
-  // Simulated active competition details
-  const competitionId = 1n
-
-  // Candidatos / proyectos simulados que coinciden con las direcciones de prueba de OpenPodio.t.sol con cuotas del mercado de predicción
+  // Mock candidates / projects matching OpenPodio.t.sol test addresses with Prediction Market odds
   const projects = [
     {
       title: 'Neon Horizons',
@@ -74,12 +94,46 @@ export default function Home() {
     },
   ]
 
-  // Prevent hydration mismatches and initialize dynamic active countdown (00:04:32 remaining)
+  // Setup mount initialization
   useEffect(() => {
     setMounted(true)
-    // Setup active state: current time + 4 minutes and 32 seconds
-    setCustomEndTime(Math.floor(Date.now() / 1000) + 4 * 60 + 32)
   }, [])
+
+  // Sync customEndTime from contract or fallback timer
+  useEffect(() => {
+    if (!mounted) return
+    if (compDetails && compDetails.endTime > 0n) {
+      setCustomEndTime(Number(compDetails.endTime))
+    } else {
+      // Setup active state: current time + 4 minutes and 32 seconds fallback
+      setCustomEndTime(Math.floor(Date.now() / 1000) + 4 * 60 + 32)
+    }
+  }, [mounted, compDetails])
+
+  // Timer status loop
+  useEffect(() => {
+    if (!customEndTime) return
+    const checkExpiry = () => {
+      const now = Math.floor(Date.now() / 1000)
+      if (now >= customEndTime) {
+        setIsExpired(true)
+      } else {
+        setIsExpired(false)
+      }
+    }
+    checkExpiry()
+    const interval = setInterval(checkExpiry, 1000)
+    return () => clearInterval(interval)
+  }, [customEndTime])
+
+  // Increments simulated txCount count dynamically when active (Durante)
+  useEffect(() => {
+    if (isExpired) return
+    const interval = setInterval(() => {
+      setTxCount((prev) => prev + Math.floor(Math.random() * 3) + 1)
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [isExpired])
 
   const handleRequestFaucet = async () => {
     if (!address) return
@@ -134,7 +188,6 @@ export default function Home() {
       return
     }
 
-    setVoteResult(null)
     try {
       const hash = await voteInCompetition(competitionId, candidate)
       setVoteResult({
@@ -142,14 +195,74 @@ export default function Home() {
         message: `¡Votado con éxito por ${title}!`,
         txHash: hash,
       })
-      // Refetch balance
-      setTimeout(() => refetchBalance(), 2000)
+      // Refetch balance and competition details after a successful vote
+      setTimeout(() => {
+        refetchBalance()
+        refetchCompDetails()
+        refetchVoteSelection()
+      }, 2000)
     } catch (err: any) {
       setVoteResult({
         success: false,
         message: err.shortMessage || err.message || 'Transacción rechazada o fallida.',
       })
     }
+  }
+
+  const handleResolve = async () => {
+    setResolveResult(null)
+    setIsResolving(true)
+    try {
+      const hash = await resolveCompetition(competitionId)
+      setResolveResult({
+        success: true,
+        message: '¡Competencia resuelta con éxito en Monad!',
+        txHash: hash,
+      })
+      setTimeout(() => {
+        refetchCompDetails()
+      }, 2000)
+    } catch (err: any) {
+      setResolveResult({
+        success: false,
+        message: err.shortMessage || err.message || 'Error al resolver la competencia.',
+      })
+    } finally {
+      setIsResolving(false)
+    }
+  }
+
+  const handleClaimRewards = async () => {
+    setClaimResult(null)
+    setIsClaiming(true)
+    try {
+      const hash = await claimRewards(competitionId)
+      setClaimResult({
+        success: true,
+        message: '¡Recompensa reclamada con éxito!',
+        txHash: hash,
+      })
+      setTimeout(() => {
+        refetchBalance()
+        refetchClaimed()
+      }, 2000)
+    } catch (err: any) {
+      setClaimResult({
+        success: false,
+        message: err.shortMessage || err.message || 'Error al reclamar la recompensa.',
+      })
+    } finally {
+      setIsClaiming(false)
+    }
+  }
+
+  const getWinnerName = () => {
+    if (!compDetails || !compDetails.resolved) return 'Pendiente de Resolución'
+    const winnerAddr = compDetails.winner.toLowerCase()
+    if (winnerAddr === '0x4444444444444444444444444444444444444444') return 'Neon Horizons'
+    if (winnerAddr === '0x5555555555555555555555555555555555555555') return 'Parallel Pulse'
+    if (winnerAddr === '0x6666666666666666666666666666666666666666') return 'Monad Scaling Engine'
+    return `${compDetails.winner.slice(0, 6)}...${compDetails.winner.slice(-4)}`
   }
 
   if (!mounted) {
@@ -259,7 +372,7 @@ export default function Home() {
               <div className="text-center sm:text-left sm:border-r border-slate-800 sm:pr-8 space-y-1">
                 <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Pozo Total</p>
                 <p className="text-xl sm:text-2xl font-black text-[#836EFD] font-mono leading-none tracking-tight">
-                  1.420,5 MONAD
+                  {totalPoolNumber.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD
                 </p>
               </div>
 
@@ -303,6 +416,7 @@ export default function Home() {
                   isWrongNetwork={isWrongNetwork}
                   odds={project.odds}
                   highlightOdds={project.highlightOdds}
+                  isExpired={isExpired}
                 />
               ))}
             </div>
@@ -312,42 +426,104 @@ export default function Home() {
           <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-6 md:p-8 space-y-6 relative overflow-hidden">
             <div className="absolute bottom-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
 
-            <div className="text-center md:text-left space-y-1.5">
-              <h3 className="text-md font-bold text-white uppercase font-mono tracking-wider flex items-center gap-2 justify-center md:justify-start">
-                <svg className="w-4 h-4 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                HUD de Revelación de OpenPod.io
-              </h3>
-              <p className="text-xs text-slate-400">
-                Podio protegido por Voto Ciego. Se calculará on-chain al llegar a 00:00:00
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800/40">
+              <div className="text-center md:text-left space-y-1.5">
+                <h3 className="text-md font-bold text-white uppercase font-mono tracking-wider flex items-center gap-2 justify-center md:justify-start">
+                  {!isExpired ? (
+                    <svg className="w-4 h-4 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-emerald-400 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                  HUD de Revelación de OpenPod.io
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {!isExpired 
+                    ? "Podio protegido por Voto Ciego. Se calculará on-chain al llegar a 00:00:00" 
+                    : "Concurso finalizado. Revelando los resultados finales on-chain."}
+                </p>
+              </div>
+
+              {/* Status Alert feedback */}
+              {(resolveResult || claimResult) && (
+                <div className={`text-xs px-3 py-1.5 rounded border ${
+                  (resolveResult?.success || claimResult?.success)
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                    : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                }`}>
+                  {resolveResult?.message || claimResult?.message}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               {[
-                { rank: '1° Puesto (Ganador)', state: '[ ? ] RECOMPENSA ESTIMADA: 1.136,4 MONAD (80% para el Creador)', subtext: 'Participación del creador en el premio' },
-                { rank: '2° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284,1 MONAD (20% para Votantes Ganadores)', subtext: 'Participación del pozo reclamada por votantes ganadores' },
-                { rank: '3° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284,1 MONAD (20% para Votantes Ganadores)', subtext: 'Participación del pozo reclamada por votantes ganadores' },
+                {
+                  rank: '1° Puesto (Ganador)',
+                  locked: `[ ? ] RECOMPENSA ESTIMADA: ${(totalPoolNumber * 0.8).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD (80% para el Creador)`,
+                  revealed: compDetails?.resolved
+                    ? `🏆 GANADOR: ${getWinnerName()} (${(totalPoolNumber * 0.8).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD)`
+                    : `⌛ ESPERANDO RESOLUCIÓN... (Recompensa: ${(totalPoolNumber * 0.8).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD)`,
+                  subtext: 'Premio directo al Creador del Proyecto'
+                },
+                {
+                  rank: '2° Puesto',
+                  locked: `DISTRIBUCIÓN DEL POZO: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD (20% para Votantes Ganadores)`,
+                  revealed: compDetails?.resolved
+                    ? `🔥 REPARTO DEL POZO: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD entre votantes`
+                    : `⌛ ESPERANDO RESOLUCIÓN... (Pozo Votantes: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD)`,
+                  subtext: 'Reclamable por votantes que acertaron la predicción'
+                },
+                {
+                  rank: '3° Puesto',
+                  locked: `DISTRIBUCIÓN DEL POZO: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD (20% para Votantes Ganadores)`,
+                  revealed: compDetails?.resolved
+                    ? `✨ POZO RECLAMABLE: Reparto de recompensas Web3`
+                    : `⌛ ESPERANDO RESOLUCIÓN...`,
+                  subtext: 'Distribución del pozo de predicciones'
+                }
               ].map((pod, i) => (
                 <div 
                   key={i} 
-                  className="rounded-2xl bg-slate-950/60 border border-slate-900 p-5 flex items-center justify-between group relative overflow-hidden"
+                  className="rounded-2xl bg-slate-950/60 border border-slate-900 p-5 flex items-center justify-between group relative overflow-hidden h-[105px]"
                 >
-                  <div className="space-y-1 z-10">
+                  <div className="space-y-1 z-10 w-[75%]">
                     <p className="text-xs font-mono font-bold text-slate-500 uppercase">{pod.rank}</p>
-                    <p className="text-xs sm:text-sm font-extrabold text-slate-200 tracking-tight leading-snug">
-                      {pod.state}
-                    </p>
+                    <div className="relative h-10 w-full">
+                      <div className={`absolute inset-0 transition-all duration-700 flex items-center ${isExpired ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}>
+                        <p className="text-xs sm:text-sm font-extrabold text-slate-300 tracking-tight leading-snug">
+                          {pod.locked}
+                        </p>
+                      </div>
+                      <div className={`absolute inset-0 transition-all duration-700 flex items-center ${isExpired ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+                        <p className="text-xs sm:text-sm font-extrabold text-emerald-400 tracking-tight leading-snug">
+                          {pod.revealed}
+                        </p>
+                      </div>
+                    </div>
                     <p className="text-[9px] text-slate-500 font-mono mt-0.5">{pod.subtext}</p>
                   </div>
                   
-                  {/* Lock icon with active ping pulse to simulate real-time on-chain actions */}
-                  <div className="relative h-10 w-10 shrink-0 rounded-full bg-slate-900 border border-slate-800/80 flex items-center justify-center text-slate-400 z-10 ml-3">
-                    <span className="absolute inset-0 rounded-full bg-[#836EFD]/25 animate-ping" />
-                    <svg className="w-4 h-4 text-[#836EFD] relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
+                  {/* Lock icon with active ping pulse or unlock check animation */}
+                  <div className="relative h-10 w-10 shrink-0 rounded-full bg-slate-900 border border-slate-800/80 flex items-center justify-center z-10 ml-3 transition-all duration-500">
+                    {!isExpired ? (
+                      <>
+                        <span className="absolute inset-0 rounded-full bg-[#836EFD]/25 animate-ping" />
+                        <svg className="w-4 h-4 text-[#836EFD] relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                      </>
+                    ) : (
+                      <>
+                        <span className="absolute inset-0 rounded-full bg-emerald-500/20 animate-pulse" />
+                        <svg className="w-4 h-4 text-emerald-400 relative z-10 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                        </svg>
+                      </>
+                    )}
                   </div>
                   
                   {/* Subtle hover effect background */}
@@ -355,6 +531,75 @@ export default function Home() {
                 </div>
               ))}
             </div>
+
+            {/* Resolve and Claim Actions Panel */}
+            {isExpired && isConnected && (
+              <div className="mt-6 pt-6 border-t border-slate-800/40 flex flex-col items-center justify-between gap-4 sm:flex-row bg-slate-950/40 p-5 rounded-2xl border border-slate-900/60 animate-fadeIn">
+                <div className="text-center sm:text-left space-y-1">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-1.5 justify-center sm:justify-start">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                    Panel de Recompensas de OpenPod.io
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    {!compDetails?.resolved
+                      ? "La votación ha terminado. Ejecuta la resolución on-chain para calcular el ganador y distribuir el pozo."
+                      : voterSelection?.toLowerCase() === compDetails.winner.toLowerCase()
+                        ? (hasClaimed 
+                            ? "¡Felicidades! Has reclamado con éxito tu porción del pozo del 20%."
+                            : "¡Felicidades! Tu predicción fue correcta. Reclama tu porción del pozo ahora.")
+                        : "El concurso ha sido resuelto. Esta vez tu predicción no resultó ganadora."}
+                  </p>
+                </div>
+
+                <div className="w-full sm:w-auto flex flex-col gap-3">
+                  {/* Resolve Button */}
+                  {!compDetails?.resolved && (
+                    <button
+                      onClick={handleResolve}
+                      disabled={isResolving}
+                      className="rounded-xl bg-gradient-to-r from-[#836EFD] to-indigo-600 hover:from-[#836EFD]/95 hover:to-indigo-600/95 py-2.5 px-5 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
+                    >
+                      {isResolving ? (
+                        <>
+                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          <span>Resolviendo en Monad...</span>
+                        </>
+                      ) : (
+                        <span>Resolver Concurso On-Chain</span>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Claim Rewards Button */}
+                  {compDetails?.resolved && voterSelection?.toLowerCase() === compDetails.winner.toLowerCase() && !hasClaimed && (
+                    <button
+                      onClick={handleClaimRewards}
+                      disabled={isClaiming}
+                      className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 py-2.5 px-5 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                    >
+                      {isClaiming ? (
+                        <>
+                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          <span>Reclamando Ganancias...</span>
+                        </>
+                      ) : (
+                        <span>Reclamar Mis Ganancias (20% Pool Share)</span>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Already Claimed State */}
+                  {compDetails?.resolved && voterSelection?.toLowerCase() === compDetails.winner.toLowerCase() && hasClaimed && (
+                    <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold flex items-center gap-1.5 justify-center">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Recompensa Reclamada
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Faucet Support Area */}
@@ -437,7 +682,7 @@ export default function Home() {
             <div className="flex items-center gap-4 text-xs font-mono">
               <span className="text-[#836EFD] font-black uppercase whitespace-nowrap flex items-center gap-1.5 shrink-0 bg-slate-950 pr-4 z-10 relative">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-                Feed de Votos en Vivo:
+                Feed de Votos en Vivo ({txCount} tx):
               </span>
               <div className="w-full overflow-hidden relative h-5 flex items-center">
                 <div className="absolute whitespace-nowrap flex gap-12 animate-marquee text-slate-500 text-[10px] font-bold">

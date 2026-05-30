@@ -16,6 +16,7 @@ contract OpenPodioTest is Test {
     address public candidate3 = address(0x6666);
 
     address[] public candidates;
+    string[] public candidateMediaUris;
     uint256 public compId = 1;
     uint256 public duration = 1 days;
     uint256 public endTime;
@@ -27,6 +28,10 @@ contract OpenPodioTest is Test {
         candidates.push(candidate2);
         candidates.push(candidate3);
 
+        candidateMediaUris.push("ipfs://uri1");
+        candidateMediaUris.push("ipfs://uri2");
+        candidateMediaUris.push("ipfs://uri3");
+
         endTime = block.timestamp + duration;
         
         // Fund test accounts
@@ -36,7 +41,7 @@ contract OpenPodioTest is Test {
     }
 
     function test_CreateCompetition() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", endTime, candidates);
+        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
         
         (
             uint256 id,
@@ -46,7 +51,8 @@ contract OpenPodioTest is Test {
             uint256 totalPool,
             address winner,
             uint256 rewardPerVoter,
-            bool resolved
+            bool resolved,
+            OpenPodio.State state
         ) = openPodio.competitions(compId);
 
         assertEq(id, compId);
@@ -57,29 +63,30 @@ contract OpenPodioTest is Test {
         assertEq(winner, address(0));
         assertEq(rewardPerVoter, 0);
         assertFalse(resolved);
+        assertTrue(state == OpenPodio.State.Active);
     }
 
     function test_RevertCreateDuplicateId() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", endTime, candidates);
+        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
         
         vm.expectRevert("Competition ID already exists");
-        openPodio.createCompetition(compId, "Another Title", "ipfs://hash", endTime + 1, candidates);
+        openPodio.createCompetition(compId, "Another Title", "ipfs://hash", (duration + 1 hours) / 1 minutes, candidates, candidateMediaUris);
     }
 
     function test_VoteValid() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", endTime, candidates);
+        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
         
         vm.prank(alice);
         openPodio.vote{value: 0.1 ether}(compId, candidate1);
 
         assertTrue(openPodio.hasVoted(compId, alice));
         
-        (,,,,uint256 totalPool,,,) = openPodio.competitions(compId);
+        (,,,,uint256 totalPool,,,,) = openPodio.competitions(compId);
         assertEq(totalPool, 0.1 ether);
     }
 
     function test_RevertVoteDouble() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", endTime, candidates);
+        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
         
         vm.startPrank(alice);
         openPodio.vote{value: 0.1 ether}(compId, candidate1);
@@ -90,7 +97,7 @@ contract OpenPodioTest is Test {
     }
 
     function test_RevertVoteWrongValue() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", endTime, candidates);
+        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
         
         vm.prank(alice);
         vm.expectRevert("Must send exactly 0.1 MONAD");
@@ -98,7 +105,7 @@ contract OpenPodioTest is Test {
     }
 
     function test_VoteResultsHiddenDuringVoting() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", endTime, candidates);
+        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
         
         vm.prank(alice);
         openPodio.vote{value: 0.1 ether}(compId, candidate1);
@@ -108,7 +115,7 @@ contract OpenPodioTest is Test {
     }
 
     function test_ResolveAndClaimDistribution() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", endTime, candidates);
+        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
         
         // Alice & Bob vote for Candidate 1
         vm.prank(alice);
@@ -133,21 +140,22 @@ contract OpenPodioTest is Test {
         
         openPodio.resolveCompetition(compId);
         
-        (,,,,,address winner,uint256 rewardPerVoter,bool resolved) = openPodio.competitions(compId);
+        (,,,,,address winner,uint256 rewardPerVoter,bool resolved, OpenPodio.State state) = openPodio.competitions(compId);
         
         assertTrue(resolved);
+        assertTrue(state == OpenPodio.State.Ended);
         assertEq(winner, candidate1);
         assertEq(rewardPerVoter, 0.03 ether);
         assertEq(candidate1.balance - balanceBeforeCreator, 0.24 ether);
 
-        // Alice claims reward
+        // Alice claims reward using claimRewards
         uint256 balanceBeforeAlice = alice.balance;
         vm.prank(alice);
-        openPodio.claimReward(compId);
+        openPodio.claimRewards(compId);
         assertEq(alice.balance - balanceBeforeAlice, 0.03 ether);
         assertTrue(openPodio.rewardClaimed(compId, alice));
 
-        // Bob claims reward
+        // Bob claims reward using compatibility wrapper claimReward
         uint256 balanceBeforeBob = bob.balance;
         vm.prank(bob);
         openPodio.claimReward(compId);
@@ -157,6 +165,6 @@ contract OpenPodioTest is Test {
         // Charlie tries to claim reward but should fail since he voted for candidate 2
         vm.prank(charlie);
         vm.expectRevert("Did not vote for the winner");
-        openPodio.claimReward(compId);
+        openPodio.claimRewards(compId);
     }
 }

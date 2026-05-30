@@ -40,8 +40,8 @@ export function useMonadProvider() {
     switchChain({ chainId: MONAD_TESTNET_CHAIN_ID })
   }
 
-  // Contract Write hook for voting
-  const { writeContractAsync, data: txHash, isPending: isVotingPending, reset: resetWrite } = useWriteContract()
+  // Contract Write hook for transactions
+  const { writeContractAsync, data: txHash, isPending: isWritePending, reset: resetWrite } = useWriteContract()
 
   // Wait for Tx Receipt with 1 confirmation (highly responsive on Monad's sub-second finality)
   const { isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({
@@ -65,10 +65,38 @@ export function useMonadProvider() {
     })
   }
 
-  // Helper read hook generator (dynamic reading requires passing arguments, so we return functions or hooks)
-  // To keep it simple, we expose a read utility for endTime of a competition
-  const readCompetitionEndTime = (competitionId: bigint) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+  // Expose resolve function
+  const resolveCompetition = async (competitionId: bigint) => {
+    if (!isConnected) throw new Error('Wallet not connected')
+    if (isWrongNetwork) throw new Error('Wrong network. Please switch to Monad Testnet.')
+
+    resetWrite()
+    
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'resolveCompetition',
+      args: [competitionId],
+    })
+  }
+
+  // Expose claimRewards function
+  const claimRewards = async (competitionId: bigint) => {
+    if (!isConnected) throw new Error('Wallet not connected')
+    if (isWrongNetwork) throw new Error('Wrong network. Please switch to Monad Testnet.')
+
+    resetWrite()
+    
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'claimRewards',
+      args: [competitionId],
+    })
+  }
+
+  // Hook for reading competition details
+  const useCompetitionDetails = (competitionId: bigint) => {
     const { data, isLoading, refetch } = useReadContract({
       address: CONTRACT_ADDRESS,
       abi: openPodioAbi,
@@ -76,12 +104,59 @@ export function useMonadProvider() {
       args: [competitionId],
     })
 
-    // competitions returns: [id, title, mediaUri, endTime, totalPool, winner, rewardPerVoter, resolved]
-    // endTime is at index 3
-    const endTime = data ? (data as any)[3] as bigint : undefined
+    // competitions returns: [id, title, mediaUri, endTime, totalPool, winner, rewardPerVoter, resolved, state]
+    const details = data ? {
+      id: (data as any)[0] as bigint,
+      title: (data as any)[1] as string,
+      mediaUri: (data as any)[2] as string,
+      endTime: (data as any)[3] as bigint,
+      totalPool: (data as any)[4] as bigint,
+      winner: (data as any)[5] as string,
+      rewardPerVoter: (data as any)[6] as bigint,
+      resolved: (data as any)[7] as boolean,
+      state: (data as any)[8] as number, // 0 = Upcoming, 1 = Active, 2 = Ended
+    } : undefined
 
     return {
-      endTime,
+      details,
+      isLoading,
+      refetch,
+    }
+  }
+
+  // Hook for reading user vote selection
+  const useUserVoteSelection = (competitionId: bigint, userAddress?: `0x${string}`) => {
+    const { data, isLoading, refetch } = useReadContract({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'voterSelection',
+      args: [competitionId, userAddress || '0x0000000000000000000000000000000000000000'],
+      query: {
+        enabled: !!userAddress,
+      }
+    })
+
+    return {
+      voterSelection: data as `0x${string}` | undefined,
+      isLoading,
+      refetch,
+    }
+  }
+
+  // Hook for reading if user has claimed reward
+  const useHasClaimedReward = (competitionId: bigint, userAddress?: `0x${string}`) => {
+    const { data, isLoading, refetch } = useReadContract({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'rewardClaimed',
+      args: [competitionId, userAddress || '0x0000000000000000000000000000000000000000'],
+      query: {
+        enabled: !!userAddress,
+      }
+    })
+
+    return {
+      hasClaimed: data as boolean | undefined,
       isLoading,
       refetch,
     }
@@ -101,10 +176,14 @@ export function useMonadProvider() {
     disconnectWallet,
     switchNetwork: handleSwitchNetwork,
     voteInCompetition,
-    readCompetitionEndTime,
+    resolveCompetition,
+    claimRewards,
+    useCompetitionDetails,
+    useUserVoteSelection,
+    useHasClaimedReward,
 
     // Loading states optimized for Monad
-    isVoting: isVotingPending || isTxConfirming,
+    isVoting: isWritePending || isTxConfirming,
     isTxSuccess,
     txHash,
   }

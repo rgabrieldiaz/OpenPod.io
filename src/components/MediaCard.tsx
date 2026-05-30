@@ -15,6 +15,7 @@ interface MediaCardProps {
   isWrongNetwork: boolean
   odds?: string
   highlightOdds?: boolean
+  isExpired?: boolean
 }
 
 export function MediaCard({
@@ -30,6 +31,7 @@ export function MediaCard({
   isWrongNetwork,
   odds,
   highlightOdds,
+  isExpired,
 }: MediaCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -151,25 +153,31 @@ export function MediaCard({
           </div>
         )}
 
-        <button
-          onClick={() => onVote(candidateAddress, title)}
-          disabled={isVoting}
-          className="w-full relative overflow-hidden rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25 hover:shadow-[#836EFD]/40 border border-[#836EFD]/40"
-        >
-          {isVoting ? (
-            <>
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              <span>Confirmando en Monad...</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-              </svg>
-              <span>Predecir y Votar (0.1 MONAD)</span>
-            </>
-          )}
-        </button>
+        {!isExpired ? (
+          <button
+            onClick={() => onVote(candidateAddress, title)}
+            disabled={isVoting}
+            className="w-full relative overflow-hidden rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25 hover:shadow-[#836EFD]/40 border border-[#836EFD]/40"
+          >
+            {isVoting ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                <span>Confirmando en Monad...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Predecir y Votar (0.1 MONAD)</span>
+              </>
+            )}
+          </button>
+        ) : (
+          <div className="w-full py-2.5 rounded-xl bg-slate-950 border border-slate-900 text-center text-xs font-bold text-slate-500 font-mono">
+            🔒 VOTACIÓN COMPLETADA
+          </div>
+        )}
       </div>
 
     </div>

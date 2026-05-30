@@ -15,6 +15,8 @@ pragma solidity ^0.8.28;
  */
 contract OpenPodio {
     
+    enum State { Upcoming, Active, Ended }
+
     struct Competition {
         uint256 id;
         string title;
@@ -24,7 +26,9 @@ contract OpenPodio {
         address winner;
         uint256 rewardPerVoter;
         bool resolved;
+        State state;
         address[] candidates;
+        string[] candidateMediaUris;
     }
 
     // Micro-sum fixed cost per vote (0.1 MONAD)
@@ -39,8 +43,8 @@ contract OpenPodio {
     // Tracks if a user has voted in a competition
     mapping(uint256 => mapping(address => bool)) public hasVoted;
 
-    // Tracks who a user voted for (Private: keeps individual choices hidden from public direct reads)
-    mapping(uint256 => mapping(address => address)) private voterSelection;
+    // Tracks who a user voted for (Public: allows frontend to verify user prediction selections)
+    mapping(uint256 => mapping(address => address)) public voterSelection;
 
     // Tracks vote counts per candidate (Private: hides real-time tally from public direct reads)
     mapping(uint256 => mapping(address => uint256)) private candidateVotes;
@@ -68,16 +72,27 @@ contract OpenPodio {
      * @param _endTime Unix timestamp specifying when voting ends.
      * @param _candidates Array of participant/project creator addresses.
      */
+    /**
+     * @notice Creates a new decentralized audio/podcast competition.
+     * @param _id Unique identifier for the competition.
+     * @param _title Title of the podcast episode/competition.
+     * @param _mediaUri IPFS/Arweave URI containing podcast media assets.
+     * @param _durationInMinutes Duration of the competition in minutes.
+     * @param _candidates Array of participant/project creator addresses.
+     * @param _candidateMediaUris Array of participant/project media links.
+     */
     function createCompetition(
         uint256 _id,
         string calldata _title,
         string calldata _mediaUri,
-        uint256 _endTime,
-        address[] calldata _candidates
+        uint256 _durationInMinutes,
+        address[] calldata _candidates,
+        string[] calldata _candidateMediaUris
     ) external {
         require(competitions[_id].endTime == 0, "Competition ID already exists");
-        require(_endTime > block.timestamp, "End time must be in the future");
+        require(_durationInMinutes > 0, "Duration must be greater than zero");
         require(_candidates.length >= 2, "Must have at least two candidates");
+        require(_candidates.length == _candidateMediaUris.length, "Mismatched candidates and media URIs");
 
         // Verify there are no duplicate candidates
         for (uint256 i = 0; i < _candidates.length; i++) {
@@ -87,19 +102,23 @@ contract OpenPodio {
             }
         }
 
+        uint256 calculatedEndTime = block.timestamp + (_durationInMinutes * 1 minutes);
+
         competitions[_id] = Competition({
             id: _id,
             title: _title,
             mediaUri: _mediaUri,
-            endTime: _endTime,
+            endTime: calculatedEndTime,
             totalPool: 0,
             winner: address(0),
             rewardPerVoter: 0,
             resolved: false,
-            candidates: _candidates
+            state: State.Active,
+            candidates: _candidates,
+            candidateMediaUris: _candidateMediaUris
         });
 
-        emit CompetitionCreated(_id, _title, _mediaUri, _endTime, _candidates);
+        emit CompetitionCreated(_id, _title, _mediaUri, calculatedEndTime, _candidates);
     }
 
     /**
@@ -111,6 +130,7 @@ contract OpenPodio {
     function vote(uint256 _competitionId, address _candidate) external payable {
         Competition storage comp = competitions[_competitionId];
         require(comp.endTime > 0, "Competition does not exist");
+        require(comp.state == State.Active, "Competition is not active");
         require(block.timestamp < comp.endTime, "Voting has ended");
         require(!hasVoted[_competitionId][msg.sender], "Already voted in this competition");
         require(msg.value == VOTE_COST, "Must send exactly 0.1 MONAD");
@@ -150,6 +170,7 @@ contract OpenPodio {
         Competition storage comp = competitions[_competitionId];
         require(comp.endTime > 0, "Competition does not exist");
         require(block.timestamp >= comp.endTime, "Competition is still active");
+        require(comp.state == State.Active, "Competition not active");
         require(!comp.resolved, "Competition already resolved");
 
         address winner = address(0);
@@ -168,6 +189,7 @@ contract OpenPodio {
         }
 
         comp.resolved = true;
+        comp.state = State.Ended;
 
         // If nobody voted, pool remains 0 and there is no winner.
         if (winner == address(0) || comp.totalPool == 0) {
@@ -199,7 +221,7 @@ contract OpenPodio {
      * @dev Pull-based payout pattern to ensure safe scalability and gas safety.
      * @param _competitionId The competition ID.
      */
-    function claimReward(uint256 _competitionId) external {
+    function claimRewards(uint256 _competitionId) public {
         Competition storage comp = competitions[_competitionId];
         require(comp.resolved, "Competition not yet resolved");
         require(comp.winner != address(0), "No winner determined");
@@ -214,6 +236,15 @@ contract OpenPodio {
         require(success, "Reward transfer failed");
 
         emit RewardClaimed(_competitionId, msg.sender, rewardAmount);
+    }
+
+    /**
+     * @notice Claims the proportionate share of the 20% pool for voters of the winning candidate.
+     * @dev Alias for backward compatibility.
+     * @param _competitionId The competition ID.
+     */
+    function claimReward(uint256 _competitionId) external {
+        claimRewards(_competitionId);
     }
 
     /**

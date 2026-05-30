@@ -27,6 +27,19 @@ export const openPodioAbi = [
   },
   {
     "type": "function",
+    "name": "claimRewards",
+    "inputs": [
+      {
+        "name": "_competitionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "competitions",
     "inputs": [
       {
@@ -75,6 +88,11 @@ export const openPodioAbi = [
         "name": "resolved",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "state",
+        "type": "uint8",
+        "internalType": "enum OpenPodio.State"
       }
     ],
     "stateMutability": "view"
@@ -99,7 +117,7 @@ export const openPodioAbi = [
         "internalType": "string"
       },
       {
-        "name": "_endTime",
+        "name": "_durationInMinutes",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -107,6 +125,11 @@ export const openPodioAbi = [
         "name": "_candidates",
         "type": "address[]",
         "internalType": "address[]"
+      },
+      {
+        "name": "_candidateMediaUris",
+        "type": "string[]",
+        "internalType": "string[]"
       }
     ],
     "outputs": [],
@@ -214,5 +237,135 @@ export const openPodioAbi = [
     ],
     "outputs": [],
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "voterSelection",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "CompetitionCreated",
+    "inputs": [
+      {
+        "name": "competitionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "title",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "mediaUri",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "endTime",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "candidates",
+        "type": "address[]",
+        "indexed": false,
+        "internalType": "address[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CompetitionResolved",
+    "inputs": [
+      {
+        "name": "competitionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "totalPool",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RewardClaimed",
+    "inputs": [
+      {
+        "name": "competitionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "voter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VoteCast",
+    "inputs": [
+      {
+        "name": "competitionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "voter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
   }
 ] as const;
