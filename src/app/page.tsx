@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 /* ─────────────────────────────────────────────
    TYPES
    ───────────────────────────────────────────── */
-type Screen = 'create' | 'participants' | 'showcase'
+type Screen = 'landing' | 'create' | 'participants' | 'showcase'
 
 interface Participant {
   id: string
@@ -50,7 +50,7 @@ export default function Home() {
   useEffect(() => setMounted(true), [])
 
   /* ── Navigation ── */
-  const [currentScreen, setCurrentScreen] = useState<Screen>('create')
+  const [currentScreen, setCurrentScreen] = useState<Screen>('landing')
 
   /* ── Contest Data ── */
   // Default end = 2 hours from now
@@ -186,30 +186,43 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Navigation pills */}
-          <div className="hidden sm:flex items-center gap-1 rounded-xl p-1" style={{ background: 'rgba(30,30,40,0.6)' }}>
-            {(['create', 'participants', 'showcase'] as Screen[]).map((s, i) => (
-              <button
-                key={s}
-                disabled={
-                  (s === 'participants' && !contest.name.trim()) ||
-                  (s === 'showcase' && !deadline)
-                }
-                onClick={() => {
-                  if (s === 'showcase' && !deadline) return
-                  if (s === 'participants' && !contest.name.trim()) return
-                  setCurrentScreen(s)
-                }}
-                className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                style={{
-                  background: currentScreen === s ? '#836EFD' : 'transparent',
-                  color: currentScreen === s ? '#fff' : '#94a3b8',
-                }}
-              >
-                {i + 1}. {s === 'create' ? 'Crear' : s === 'participants' ? 'Participantes' : 'Showcase'}
-              </button>
-            ))}
-          </div>
+          {/* Navigation pills / Lanzar Demo CTA */}
+          {currentScreen === 'landing' ? (
+            <button
+              onClick={() => setCurrentScreen('create')}
+              className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all active:scale-[0.97] flex items-center gap-2"
+              style={{
+                background: 'linear-gradient(135deg, #836EFD 0%, #6C5CE7 100%)',
+                boxShadow: '0 4px 20px rgba(131,110,253,0.3)',
+              }}
+            >
+              Lanzar Demo ⚡
+            </button>
+          ) : (
+            <div className="hidden sm:flex items-center gap-1 rounded-xl p-1" style={{ background: 'rgba(30,30,40,0.6)' }}>
+              {(['create', 'participants', 'showcase'] as Screen[]).map((s, i) => (
+                <button
+                  key={s}
+                  disabled={
+                    (s === 'participants' && !contest.name.trim()) ||
+                    (s === 'showcase' && !deadline)
+                  }
+                  onClick={() => {
+                    if (s === 'showcase' && !deadline) return
+                    if (s === 'participants' && !contest.name.trim()) return
+                    setCurrentScreen(s)
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{
+                    background: currentScreen === s ? '#836EFD' : 'transparent',
+                    color: currentScreen === s ? '#fff' : '#94a3b8',
+                  }}
+                >
+                  {i + 1}. {s === 'create' ? 'Crear' : s === 'participants' ? 'Participantes' : 'Showcase'}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Simulated wallet */}
           <div className="flex items-center gap-2">
@@ -224,7 +237,203 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 space-y-8">
+      <main className={`mx-auto px-4 py-8 sm:px-6 space-y-12 transition-all duration-300 ${currentScreen === 'landing' ? 'max-w-6xl' : 'max-w-5xl'}`}>
+
+        {/* ════════════════════════════════════════
+            SCREEN 0: LANDING PAGE
+           ════════════════════════════════════════ */}
+        {currentScreen === 'landing' && (
+          <section className="space-y-16 animate-in fade-in slide-in-from-bottom-6 duration-700">
+            {/* Immersive Hero Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              {/* Left Column: Core pitch */}
+              <div className="lg:col-span-6 space-y-6 text-left">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest" style={{ background: 'rgba(131,110,253,0.12)', color: '#836EFD', border: '1px solid rgba(131,110,253,0.25)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#00F0FF', boxShadow: '0 0 8px #00F0FF' }} />
+                  Monad Hackathon Entry
+                </div>
+                
+                <h2 className="text-4xl sm:text-5xl font-black text-white tracking-tight leading-[1.1]">
+                  Concursos de Media <br />
+                  <span style={{ background: 'linear-gradient(135deg, #836EFD 0%, #00F0FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    Descentralizados
+                  </span>
+                </h2>
+                
+                <p className="text-base text-slate-400 max-w-xl leading-relaxed">
+                  Crea salas de competencia trustless, agrega participantes y permite que tu audiencia vote en vivo de manera segura y transparente con firma criptográfica. Distribución automática de premios del pool mediante smart contracts.
+                </p>
+
+                <div className="flex flex-wrap gap-4 pt-2">
+                  <button
+                    onClick={() => setCurrentScreen('create')}
+                    className="px-6 py-3.5 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all active:scale-[0.97] flex items-center gap-2 animate-bounce-subtle"
+                    style={{
+                      background: 'linear-gradient(135deg, #836EFD 0%, #6C5CE7 100%)',
+                      boxShadow: '0 8px 30px rgba(131,110,253,0.35)',
+                    }}
+                  >
+                    Entrar a la Demo
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                  </button>
+
+                  <a
+                    href="#features"
+                    className="px-6 py-3.5 rounded-xl text-sm font-bold uppercase tracking-wider transition-all hover:text-white flex items-center"
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      color: '#94a3b8',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
+                    }}
+                  >
+                    Ver Pilares
+                  </a>
+                </div>
+              </div>
+
+              {/* Right Column: Generated Hero Mockup */}
+              <div className="lg:col-span-6 relative">
+                <div className="absolute inset-0 -m-4 opacity-25 blur-3xl rounded-full" style={{ background: 'radial-gradient(circle, #836EFD 0%, #00F0FF 50%, transparent 70%)' }} />
+                <div className="relative rounded-3xl overflow-hidden border p-2" style={{ background: 'rgba(15,15,22,0.8)', borderColor: 'rgba(131,110,253,0.2)' }}>
+                  <img
+                    src="/openpod_hero.png"
+                    alt="OpenPod Dashboard Hero Mockup"
+                    className="w-full h-auto rounded-2xl object-cover shadow-2xl transition-transform duration-700 hover:scale-[1.02]"
+                  />
+                  <div className="absolute bottom-6 left-6 right-6 p-4 rounded-2xl border" style={{ background: 'rgba(11,11,15,0.85)', borderColor: 'rgba(51,51,68,0.6)', backdropFilter: 'blur(10px)' }}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-left">
+                        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>Plataforma UI</p>
+                        <p className="text-xs font-black text-white">Podio de Ganadores en Vivo</p>
+                      </div>
+                      <span className="text-[9px] font-bold px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/25">ON-CHAIN</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Metrics Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-4">
+              {[
+                { label: 'Smart Contracts', value: '100% Trustless' },
+                { label: 'Tiempo de Voto', value: '400ms Signing' },
+                { label: 'Fees de Protocolo', value: '0% Comisión' },
+                { label: 'Soporte Formatos', value: 'Multi-Format' },
+              ].map((stat, i) => (
+                <div key={i} className="rounded-2xl p-4 border text-center space-y-1" style={{ background: 'rgba(15,15,22,0.5)', borderColor: 'rgba(51,51,68,0.4)' }}>
+                  <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>{stat.label}</p>
+                  <p className="text-lg font-black text-white" style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>{stat.value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* How it works Section */}
+            <div className="space-y-8 pt-8">
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-black text-white tracking-tight">¿Cómo funciona la Demo?</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">Explora el ciclo de vida completo de un concurso en tres pasos secuenciales.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {[
+                  {
+                    step: '01',
+                    title: 'Crea tu Competencia',
+                    desc: 'Establece el nombre, la descripción y define la fecha exacta de finalización mediante nuestro calendario adaptado para la demo.'
+                  },
+                  {
+                    step: '02',
+                    title: 'Configura Creadores',
+                    desc: 'Añade competidores e ingresa enlaces directos de YouTube, videos .mp4, audios .mp3 o imágenes que representan su contenido.'
+                  },
+                  {
+                    step: '03',
+                    title: 'Lanza & Vota en Vivo',
+                    desc: 'Mira la cuenta regresiva, simula tu voto firmando con Mozi Wallet y observa el podio animado cuando expire el tiempo.'
+                  }
+                ].map((s, i) => (
+                  <div key={i} className="rounded-2xl border p-6 space-y-4 relative overflow-hidden group hover:border-[#836EFD]/50 transition-colors text-left" style={{ background: 'rgba(15,15,22,0.6)', borderColor: 'rgba(51,51,68,0.4)' }}>
+                    <div className="absolute top-0 right-0 text-7xl font-black opacity-5 translate-x-4 -translate-y-4 group-hover:opacity-10 transition-opacity" style={{ color: '#836EFD', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                      {s.step}
+                    </div>
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs" style={{ background: 'rgba(131,110,253,0.12)', color: '#836EFD', border: '1px solid rgba(131,110,253,0.25)' }}>
+                      {s.step}
+                    </div>
+                    <h4 className="font-black text-white text-base">{s.title}</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">{s.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pillar Features Matrix */}
+            <div id="features" className="space-y-8 pt-8">
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-black text-white tracking-tight">Pilares de OpenPod.io</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">Una arquitectura Web3 premium pensada para escalabilidad y facilidad de uso.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
+                {[
+                  {
+                    title: 'Carga Multimedia Adaptativa',
+                    desc: 'La plataforma detecta si es un video de YouTube, un feed de audio, un video local o una imagen y renderiza un reproductor adaptado con ecualizador animado.'
+                  },
+                  {
+                    title: 'Monad Pool Instantáneo',
+                    desc: 'Cada voto aporta al acumulado general. Al finalizar la competencia, el contrato inteligente distribuye equitativamente según las posiciones del podio.'
+                  },
+                  {
+                    title: 'Votación Trustless en 400ms',
+                    desc: 'Firmar votos nunca fue tan rápido. Mediante Mozi Wallet, simulamos el estado de conexión del wallet Web3 garantizando que cada usuario pueda votar solo una vez por sesión.'
+                  },
+                  {
+                    title: 'Cierre Animado & Podium Reveal',
+                    desc: 'Una interfaz tipo HUD de videojuegos. Al terminar el tiempo, los resultados se ordenan dinámicamente, revelando el podio con animaciones y habilitando el botón de reclamo de ganancias.'
+                  }
+                ].map((f, i) => (
+                  <div key={i} className="rounded-3xl border p-6 sm:p-8 space-y-3 flex items-start gap-5" style={{ background: 'rgba(15,15,22,0.8)', borderColor: 'rgba(51,51,68,0.5)' }}>
+                    <div className="p-3 rounded-2xl flex-shrink-0" style={{ background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)' }}>
+                      <svg className="w-5 h-5" style={{ color: '#00F0FF' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="font-black text-white text-base">{f.title}</h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">{f.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Immersive CTA section */}
+            <div className="rounded-3xl overflow-hidden p-8 sm:p-12 text-center relative border" style={{ background: 'linear-gradient(135deg, rgba(131,110,253,0.12) 0%, rgba(0,240,255,0.06) 100%)', borderColor: 'rgba(131,110,253,0.3)' }}>
+              <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, #836EFD 0%, transparent 60%)' }} />
+              <div className="relative max-w-md mx-auto space-y-6">
+                <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight">¿Listo para probarlo?</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  No se necesitan tokens reales ni wallets configuradas para probar la simulación. Entra al modo demo con un clic.
+                </p>
+                <button
+                  onClick={() => setCurrentScreen('create')}
+                  className="w-full sm:w-auto px-8 py-4 rounded-2xl text-sm font-black uppercase tracking-wider text-white transition-all active:scale-95 inline-flex items-center justify-center gap-2"
+                  style={{
+                    background: 'linear-gradient(135deg, #836EFD 0%, #6C5CE7 100%)',
+                    boxShadow: '0 8px 30px rgba(131,110,253,0.35)',
+                  }}
+                >
+                  Comenzar Demo Ahora ⚡
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ════════════════════════════════════════
             SCREEN A: CREATE CONTEST
