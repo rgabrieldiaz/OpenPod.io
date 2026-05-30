@@ -8,6 +8,8 @@ import { useMonadProvider } from '../hooks/useMonadProvider'
 import { CountdownTimer } from '../components/CountdownTimer'
 import { MediaCard } from '../components/MediaCard'
 
+const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x356543d368819052604081206007015460ff1680') as `0x${string}`
+
 export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [customEndTime, setCustomEndTime] = useState<number | undefined>(undefined)
@@ -259,7 +261,7 @@ export default function Home() {
       if (publicClient) {
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
         
-        // Try to decode the ConcursoCreated event from the transaction receipt logs
+        // 1. Try to decode the ConcursoCreated event from the transaction receipt logs
         for (const log of receipt.logs) {
           try {
             const decoded = decodeEventLog({
@@ -274,6 +276,38 @@ export default function Home() {
             }
           } catch (e) {
             // Ignore if logs do not match the event signature
+          }
+        }
+
+        // 2. Fallback: Query latestCompetitionId directly from the blockchain
+        if (!newPin) {
+          try {
+            const latestIdOnChain = await publicClient.readContract({
+              address: CONTRACT_ADDRESS,
+              abi: openPodioAbi,
+              functionName: 'latestCompetitionId',
+            })
+            if (latestIdOnChain && latestIdOnChain > 0n) {
+              newPin = latestIdOnChain as bigint
+            }
+          } catch (e) {
+            // Ignore
+          }
+        }
+
+        // 3. Fallback: Query competitionCount directly from the blockchain (if old contract)
+        if (!newPin) {
+          try {
+            const countOnChain = await publicClient.readContract({
+              address: CONTRACT_ADDRESS,
+              abi: openPodioAbi,
+              functionName: 'competitionCount',
+            })
+            if (countOnChain && countOnChain > 0n) {
+              newPin = countOnChain as bigint
+            }
+          } catch (e) {
+            // Ignore
           }
         }
       }
@@ -301,6 +335,7 @@ export default function Home() {
         }
       }
       refetchCompCount()
+      refetchLatestId()
     } catch (err: any) {
       setCreateResult({
         success: false,
