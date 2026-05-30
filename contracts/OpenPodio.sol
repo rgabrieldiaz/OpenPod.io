@@ -20,7 +20,7 @@ contract OpenPodio {
     struct Competition {
         uint256 id;
         string title;
-        string mediaUri; // IPFS or Arweave hash
+        address host;
         uint256 endTime;
         uint256 totalPool;
         address winner;
@@ -28,11 +28,13 @@ contract OpenPodio {
         bool resolved;
         State state;
         address[] candidates;
-        string[] candidateMediaUris;
     }
 
     // Micro-sum fixed cost per vote (0.1 MONAD)
     uint256 public constant VOTE_COST = 0.1 ether;
+
+    // Competition counter
+    uint256 public competitionCount;
 
     // Mapping from Competition ID to its details
     mapping(uint256 => Competition) public competitions;
@@ -52,73 +54,91 @@ contract OpenPodio {
     // Tracks if a voter has claimed their share of the 20% pool
     mapping(uint256 => mapping(address => bool)) public rewardClaimed;
 
+    // Dynamic candidate metadata
+    mapping(uint256 => mapping(address => string)) public candidateProjectName;
+    mapping(uint256 => mapping(address => string)) public candidateCreatorName;
+    mapping(uint256 => mapping(address => string)) public candidateMediaUri;
+    mapping(uint256 => mapping(address => bool)) public hasRegistered;
+
     // Events
-    event CompetitionCreated(
+    event ConcursoCreated(uint256 indexed competitionId, string title, address indexed host);
+    event ParticipantRegistered(
         uint256 indexed competitionId, 
-        string title, 
-        string mediaUri, 
-        uint256 endTime, 
-        address[] candidates
+        address indexed participant, 
+        string projectName, 
+        string creatorName, 
+        string mediaUrl
     );
+    event VotingStarted(uint256 indexed competitionId, uint256 endTime);
     event VoteCast(uint256 indexed competitionId, address indexed voter);
     event CompetitionResolved(uint256 indexed competitionId, address indexed winner, uint256 totalPool);
     event RewardClaimed(uint256 indexed competitionId, address indexed voter, uint256 amount);
 
     /**
      * @notice Creates a new decentralized audio/podcast competition.
-     * @param _id Unique identifier for the competition.
      * @param _title Title of the podcast episode/competition.
-     * @param _mediaUri IPFS/Arweave URI containing podcast media assets.
-     * @param _endTime Unix timestamp specifying when voting ends.
-     * @param _candidates Array of participant/project creator addresses.
      */
+    function createConcurso(string calldata _title) external returns (uint256) {
+        competitionCount++;
+        uint256 newId = competitionCount;
+        
+        Competition storage comp = competitions[newId];
+        comp.id = newId;
+        comp.title = _title;
+        comp.host = msg.sender;
+        comp.state = State.Upcoming;
+
+        emit ConcursoCreated(newId, _title, msg.sender);
+        return newId;
+    }
+
     /**
-     * @notice Creates a new decentralized audio/podcast competition.
-     * @param _id Unique identifier for the competition.
-     * @param _title Title of the podcast episode/competition.
-     * @param _mediaUri IPFS/Arweave URI containing podcast media assets.
-     * @param _durationInMinutes Duration of the competition in minutes.
-     * @param _candidates Array of participant/project creator addresses.
-     * @param _candidateMediaUris Array of participant/project media links.
+     * @notice Allows a wallet to register their project in an upcoming competition.
+     * @param _competitionId The competition ID.
+     * @param _projectName Name of the podcast project.
+     * @param _creatorName Name of the creator/team.
+     * @param _mediaUrl URL of the audio, video or YouTube project content.
      */
-    function createCompetition(
-        uint256 _id,
-        string calldata _title,
-        string calldata _mediaUri,
-        uint256 _durationInMinutes,
-        address[] calldata _candidates,
-        string[] calldata _candidateMediaUris
+    function registerParticipant(
+        uint256 _competitionId,
+        string calldata _projectName,
+        string calldata _creatorName,
+        string calldata _mediaUrl
     ) external {
-        require(competitions[_id].endTime == 0, "Competition ID already exists");
+        Competition storage comp = competitions[_competitionId];
+        require(comp.id == _competitionId, "Competition does not exist");
+        require(comp.state == State.Upcoming, "Registration is not open");
+        require(!hasRegistered[_competitionId][msg.sender], "Already registered");
+        require(bytes(_projectName).length > 0, "Project name cannot be empty");
+        require(bytes(_creatorName).length > 0, "Creator name cannot be empty");
+        require(bytes(_mediaUrl).length > 0, "Media URL cannot be empty");
+
+        hasRegistered[_competitionId][msg.sender] = true;
+        candidateProjectName[_competitionId][msg.sender] = _projectName;
+        candidateCreatorName[_competitionId][msg.sender] = _creatorName;
+        candidateMediaUri[_competitionId][msg.sender] = _mediaUrl;
+        comp.candidates.push(msg.sender);
+
+        emit ParticipantRegistered(_competitionId, msg.sender, _projectName, _creatorName, _mediaUrl);
+    }
+
+    /**
+     * @notice Starts the voting phase for a competition. Only callable by the host.
+     * @param _competitionId The competition ID.
+     * @param _durationInMinutes The duration of the voting phase in minutes.
+     */
+    function startVoting(uint256 _competitionId, uint256 _durationInMinutes) external {
+        Competition storage comp = competitions[_competitionId];
+        require(comp.id == _competitionId, "Competition does not exist");
+        require(comp.host == msg.sender, "Only the host can start voting");
+        require(comp.state == State.Upcoming, "Competition not in Upcoming state");
         require(_durationInMinutes > 0, "Duration must be greater than zero");
-        require(_candidates.length >= 2, "Must have at least two candidates");
-        require(_candidates.length == _candidateMediaUris.length, "Mismatched candidates and media URIs");
+        require(comp.candidates.length >= 2, "Must have at least two candidates to start");
 
-        // Verify there are no duplicate candidates
-        for (uint256 i = 0; i < _candidates.length; i++) {
-            require(_candidates[i] != address(0), "Invalid candidate address");
-            for (uint256 j = i + 1; j < _candidates.length; j++) {
-                require(_candidates[i] != _candidates[j], "Duplicate candidates not allowed");
-            }
-        }
+        comp.state = State.Active;
+        comp.endTime = block.timestamp + (_durationInMinutes * 1 minutes);
 
-        uint256 calculatedEndTime = block.timestamp + (_durationInMinutes * 1 minutes);
-
-        competitions[_id] = Competition({
-            id: _id,
-            title: _title,
-            mediaUri: _mediaUri,
-            endTime: calculatedEndTime,
-            totalPool: 0,
-            winner: address(0),
-            rewardPerVoter: 0,
-            resolved: false,
-            state: State.Active,
-            candidates: _candidates,
-            candidateMediaUris: _candidateMediaUris
-        });
-
-        emit CompetitionCreated(_id, _title, _mediaUri, calculatedEndTime, _candidates);
+        emit VotingStarted(_competitionId, comp.endTime);
     }
 
     /**
@@ -134,17 +154,7 @@ contract OpenPodio {
         require(block.timestamp < comp.endTime, "Voting has ended");
         require(!hasVoted[_competitionId][msg.sender], "Already voted in this competition");
         require(msg.value == VOTE_COST, "Must send exactly 0.1 MONAD");
-
-        // Verify that the candidate is registered in the competition
-        bool isValidCandidate = false;
-        uint256 numCandidates = comp.candidates.length;
-        for (uint256 i = 0; i < numCandidates; i++) {
-            if (comp.candidates[i] == _candidate) {
-                isValidCandidate = true;
-                break;
-            }
-        }
-        require(isValidCandidate, "Candidate not in competition");
+        require(hasRegistered[_competitionId][_candidate], "Candidate not registered");
 
         // Record vote in partitioned state
         hasVoted[_competitionId][msg.sender] = true;
@@ -261,5 +271,14 @@ contract OpenPodio {
             "Voting results are hidden until resolved"
         );
         return candidateVotes[_competitionId][_candidate];
+    }
+
+    /**
+     * @notice Helper to check registered candidates for a competition.
+     * @param _competitionId The competition ID.
+     * @return Array of candidate addresses.
+     */
+    function getCandidates(uint256 _competitionId) external view returns (address[] memory) {
+        return competitions[_competitionId].candidates;
     }
 }

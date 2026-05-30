@@ -1,6 +1,6 @@
 'use client'
 
-import { useAccount, useConnect, useDisconnect, useSwitchChain, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useConnect, useDisconnect, useSwitchChain, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { injected } from 'wagmi/connectors'
 import { openPodioAbi } from '../config/abi'
 import { parseEther } from 'viem'
@@ -49,6 +49,51 @@ export function useMonadProvider() {
     confirmations: 1,
   })
 
+  // Expose createConcurso function
+  const createConcurso = async (title: string) => {
+    if (!isConnected) throw new Error('Wallet not connected')
+    if (isWrongNetwork) throw new Error('Wrong network. Please switch to Monad Testnet.')
+
+    resetWrite()
+
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'createConcurso',
+      args: [title],
+    })
+  }
+
+  // Expose registerParticipant function
+  const registerParticipant = async (competitionId: bigint, projectName: string, creatorName: string, mediaUrl: string) => {
+    if (!isConnected) throw new Error('Wallet not connected')
+    if (isWrongNetwork) throw new Error('Wrong network. Please switch to Monad Testnet.')
+
+    resetWrite()
+
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'registerParticipant',
+      args: [competitionId, projectName, creatorName, mediaUrl],
+    })
+  }
+
+  // Expose startVoting function
+  const startVoting = async (competitionId: bigint, durationInMinutes: bigint) => {
+    if (!isConnected) throw new Error('Wallet not connected')
+    if (isWrongNetwork) throw new Error('Wrong network. Please switch to Monad Testnet.')
+
+    resetWrite()
+
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'startVoting',
+      args: [competitionId, durationInMinutes],
+    })
+  }
+
   // Expose vote function
   const voteInCompetition = async (competitionId: bigint, candidateAddress: `0x${string}`) => {
     if (!isConnected) throw new Error('Wallet not connected')
@@ -95,6 +140,21 @@ export function useMonadProvider() {
     })
   }
 
+  // Hook for reading the current competition count
+  const useCompetitionCount = () => {
+    const { data, isLoading, refetch } = useReadContract({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'competitionCount',
+    })
+
+    return {
+      count: data as bigint | undefined,
+      isLoading,
+      refetch,
+    }
+  }
+
   // Hook for reading competition details
   const useCompetitionDetails = (competitionId: bigint) => {
     const { data, isLoading, refetch } = useReadContract({
@@ -104,11 +164,11 @@ export function useMonadProvider() {
       args: [competitionId],
     })
 
-    // competitions returns: [id, title, mediaUri, endTime, totalPool, winner, rewardPerVoter, resolved, state]
+    // competitions returns: [id, title, host, endTime, totalPool, winner, rewardPerVoter, resolved, state]
     const details = data ? {
       id: (data as any)[0] as bigint,
       title: (data as any)[1] as string,
-      mediaUri: (data as any)[2] as string,
+      host: (data as any)[2] as string,
       endTime: (data as any)[3] as bigint,
       totalPool: (data as any)[4] as bigint,
       winner: (data as any)[5] as string,
@@ -119,6 +179,54 @@ export function useMonadProvider() {
 
     return {
       details,
+      isLoading,
+      refetch,
+    }
+  }
+
+  // Hook for reading candidates addresses
+  const useCandidates = (competitionId: bigint) => {
+    const { data, isLoading, refetch } = useReadContract({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'getCandidates',
+      args: [competitionId],
+    })
+
+    return {
+      candidates: data as `0x${string}`[] | undefined,
+      isLoading,
+      refetch,
+    }
+  }
+
+  // Hook for reading candidate names, creators, and media urls
+  const useCandidatesMetadata = (competitionId: bigint, candidateAddresses: `0x${string}`[] | undefined) => {
+    const { data, isLoading, refetch } = useReadContracts({
+      contracts: (candidateAddresses || []).flatMap((addr) => [
+        {
+          address: CONTRACT_ADDRESS,
+          abi: openPodioAbi,
+          functionName: 'candidateProjectName',
+          args: [competitionId, addr],
+        },
+        {
+          address: CONTRACT_ADDRESS,
+          abi: openPodioAbi,
+          functionName: 'candidateCreatorName',
+          args: [competitionId, addr],
+        },
+        {
+          address: CONTRACT_ADDRESS,
+          abi: openPodioAbi,
+          functionName: 'candidateMediaUri',
+          args: [competitionId, addr],
+        },
+      ]),
+    })
+
+    return {
+      metadata: data,
       isLoading,
       refetch,
     }
@@ -175,10 +283,16 @@ export function useMonadProvider() {
     connectWallet,
     disconnectWallet,
     switchNetwork: handleSwitchNetwork,
+    createConcurso,
+    registerParticipant,
+    startVoting,
     voteInCompetition,
     resolveCompetition,
     claimRewards,
+    useCompetitionCount,
     useCompetitionDetails,
+    useCandidates,
+    useCandidatesMetadata,
     useUserVoteSelection,
     useHasClaimedReward,
 

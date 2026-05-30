@@ -7,6 +7,7 @@ import "../contracts/OpenPodio.sol";
 contract OpenPodioTest is Test {
     OpenPodio public openPodio;
     
+    address public host = address(0x9999);
     address public alice = address(0x1111);
     address public bob = address(0x2222);
     address public charlie = address(0x3333);
@@ -15,156 +16,192 @@ contract OpenPodioTest is Test {
     address public candidate2 = address(0x5555);
     address public candidate3 = address(0x6666);
 
-    address[] public candidates;
-    string[] public candidateMediaUris;
-    uint256 public compId = 1;
-    uint256 public duration = 1 days;
-    uint256 public endTime;
+    uint256 public compId;
+    uint256 public durationInMinutes = 60; // 1 hour
 
     function setUp() public {
         openPodio = new OpenPodio();
-        
-        candidates.push(candidate1);
-        candidates.push(candidate2);
-        candidates.push(candidate3);
-
-        candidateMediaUris.push("ipfs://uri1");
-        candidateMediaUris.push("ipfs://uri2");
-        candidateMediaUris.push("ipfs://uri3");
-
-        endTime = block.timestamp + duration;
         
         // Fund test accounts
         vm.deal(alice, 10 ether);
         vm.deal(bob, 10 ether);
         vm.deal(charlie, 10 ether);
+        vm.deal(candidate1, 10 ether);
+        vm.deal(candidate2, 10 ether);
+        vm.deal(candidate3, 10 ether);
     }
 
-    function test_CreateCompetition() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
+    function test_CreateConcurso() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
         
+        assertEq(newId, 1);
+        assertEq(openPodio.competitionCount(), 1);
+
         (
             uint256 id,
             string memory title,
-            string memory mediaUri,
+            address compHost,
             uint256 compEndTime,
             uint256 totalPool,
             address winner,
             uint256 rewardPerVoter,
             bool resolved,
             OpenPodio.State state
-        ) = openPodio.competitions(compId);
+        ) = openPodio.competitions(newId);
 
-        assertEq(id, compId);
-        assertEq(title, "Podcast Battle #1");
-        assertEq(mediaUri, "ipfs://media-hash");
-        assertEq(compEndTime, endTime);
+        assertEq(id, 1);
+        assertEq(title, "Demo Hackathon #1");
+        assertEq(compHost, host);
+        assertEq(compEndTime, 0);
         assertEq(totalPool, 0);
         assertEq(winner, address(0));
         assertEq(rewardPerVoter, 0);
         assertFalse(resolved);
-        assertTrue(state == OpenPodio.State.Active);
+        assertTrue(state == OpenPodio.State.Upcoming);
     }
 
-    function test_RevertCreateDuplicateId() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
-        
-        vm.expectRevert("Competition ID already exists");
-        openPodio.createCompetition(compId, "Another Title", "ipfs://hash", (duration + 1 hours) / 1 minutes, candidates, candidateMediaUris);
+    function test_RegisterParticipant() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+
+        // Register candidate 1
+        vm.prank(candidate1);
+        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge Studios", "https://example.com/video.mp4");
+
+        // Register candidate 2
+        vm.prank(candidate2);
+        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/audio.mp3");
+
+        assertTrue(openPodio.hasRegistered(newId, candidate1));
+        assertTrue(openPodio.hasRegistered(newId, candidate2));
+        assertFalse(openPodio.hasRegistered(newId, candidate3));
+
+        assertEq(openPodio.candidateProjectName(newId, candidate1), "Neon Horizons");
+        assertEq(openPodio.candidateCreatorName(newId, candidate1), "Pixel Forge Studios");
+        assertEq(openPodio.candidateMediaUri(newId, candidate1), "https://example.com/video.mp4");
+
+        address[] memory candidates = openPodio.getCandidates(newId);
+        assertEq(candidates.length, 2);
+        assertEq(candidates[0], candidate1);
+        assertEq(candidates[1], candidate2);
     }
 
-    function test_VoteValid() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
-        
-        vm.prank(alice);
-        openPodio.vote{value: 0.1 ether}(compId, candidate1);
+    function test_RevertRegisterDuplicate() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
 
-        assertTrue(openPodio.hasVoted(compId, alice));
+        vm.startPrank(candidate1);
+        openPodio.registerParticipant(newId, "Project 1", "Creator 1", "https://example.com/1");
         
-        (,,,,uint256 totalPool,,,,) = openPodio.competitions(compId);
-        assertEq(totalPool, 0.1 ether);
-    }
-
-    function test_RevertVoteDouble() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
-        
-        vm.startPrank(alice);
-        openPodio.vote{value: 0.1 ether}(compId, candidate1);
-
-        vm.expectRevert("Already voted in this competition");
-        openPodio.vote{value: 0.1 ether}(compId, candidate2);
+        vm.expectRevert("Already registered");
+        openPodio.registerParticipant(newId, "Project 2", "Creator 2", "https://example.com/2");
         vm.stopPrank();
     }
 
-    function test_RevertVoteWrongValue() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
-        
-        vm.prank(alice);
-        vm.expectRevert("Must send exactly 0.1 MONAD");
-        openPodio.vote{value: 0.05 ether}(compId, candidate1);
+    function test_StartVoting() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+
+        vm.prank(candidate1);
+        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        vm.prank(candidate2);
+        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+
+        vm.prank(host);
+        openPodio.startVoting(newId, durationInMinutes);
+
+        (,,,,,,,,OpenPodio.State state) = openPodio.competitions(newId);
+        assertTrue(state == OpenPodio.State.Active);
+
+        (,,,uint256 endTime,,,,,) = openPodio.competitions(newId);
+        assertEq(endTime, block.timestamp + (durationInMinutes * 1 minutes));
     }
 
-    function test_VoteResultsHiddenDuringVoting() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
-        
-        vm.prank(alice);
-        openPodio.vote{value: 0.1 ether}(compId, candidate1);
+    function test_RevertStartVotingNotHost() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
 
-        vm.expectRevert("Voting results are hidden until resolved");
-        openPodio.getCandidateVotes(compId, candidate1);
+        vm.prank(candidate1);
+        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        vm.prank(candidate2);
+        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+
+        vm.prank(alice);
+        vm.expectRevert("Only the host can start voting");
+        openPodio.startVoting(newId, durationInMinutes);
     }
 
-    function test_ResolveAndClaimDistribution() public {
-        openPodio.createCompetition(compId, "Podcast Battle #1", "ipfs://media-hash", duration / 1 minutes, candidates, candidateMediaUris);
-        
-        // Alice & Bob vote for Candidate 1
+    function test_RevertStartVotingInsufficientCandidates() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+
+        vm.prank(candidate1);
+        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+
+        vm.prank(host);
+        vm.expectRevert("Must have at least two candidates to start");
+        openPodio.startVoting(newId, durationInMinutes);
+    }
+
+    function test_VoteValid() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+
+        vm.prank(candidate1);
+        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        vm.prank(candidate2);
+        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+
+        vm.prank(host);
+        openPodio.startVoting(newId, durationInMinutes);
+
         vm.prank(alice);
-        openPodio.vote{value: 0.1 ether}(compId, candidate1);
-        
+        openPodio.vote{value: 0.1 ether}(newId, candidate1);
+
+        assertTrue(openPodio.hasVoted(newId, alice));
+        assertEq(openPodio.voterSelection(newId, alice), candidate1);
+
+        (,,,,uint256 totalPool,,,,) = openPodio.competitions(newId);
+        assertEq(totalPool, 0.1 ether);
+    }
+
+    function test_ResolveAndClaim() public {
+        vm.prank(host);
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+
+        vm.prank(candidate1);
+        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        vm.prank(candidate2);
+        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+
+        vm.prank(host);
+        openPodio.startVoting(newId, durationInMinutes);
+
+        vm.prank(alice);
+        openPodio.vote{value: 0.1 ether}(newId, candidate1);
+
         vm.prank(bob);
-        openPodio.vote{value: 0.1 ether}(compId, candidate1);
-        
-        // Charlie votes for Candidate 2
-        vm.prank(charlie);
-        openPodio.vote{value: 0.1 ether}(compId, candidate2);
+        openPodio.vote{value: 0.1 ether}(newId, candidate1);
 
-        // Advance block time beyond endTime
+        vm.prank(charlie);
+        openPodio.vote{value: 0.1 ether}(newId, candidate2);
+
+        (,,,uint256 endTime,,,,,) = openPodio.competitions(newId);
         vm.warp(endTime + 1);
 
-        // Candidate 1 has 2 votes. Candidate 2 has 1 vote. Candidate 1 wins.
-        // Total Pool = 0.3 ether.
-        // Creator (Candidate 1) gets 80% = 0.24 ether.
-        // Voters of winner (Alice & Bob) get 20% = 0.06 ether, split between 2 = 0.03 ether each.
-        
-        uint256 balanceBeforeCreator = candidate1.balance;
-        
-        openPodio.resolveCompetition(compId);
-        
-        (,,,,,address winner,uint256 rewardPerVoter,bool resolved, OpenPodio.State state) = openPodio.competitions(compId);
-        
+        uint256 creatorBalanceBefore = candidate1.balance;
+        openPodio.resolveCompetition(newId);
+
+        (,,,,,,uint256 rewardPerVoter,bool resolved, OpenPodio.State state) = openPodio.competitions(newId);
         assertTrue(resolved);
         assertTrue(state == OpenPodio.State.Ended);
-        assertEq(winner, candidate1);
-        assertEq(rewardPerVoter, 0.03 ether);
-        assertEq(candidate1.balance - balanceBeforeCreator, 0.24 ether);
+        assertEq(candidate1.balance - creatorBalanceBefore, 0.24 ether); // 80% of 0.3 MONAD
+        assertEq(rewardPerVoter, 0.03 ether); // 20% of 0.3 MONAD = 0.06 ether divided by 2 winning voters (Alice and Bob)
 
-        // Alice claims reward using claimRewards
-        uint256 balanceBeforeAlice = alice.balance;
+        uint256 aliceBalanceBefore = alice.balance;
         vm.prank(alice);
-        openPodio.claimRewards(compId);
-        assertEq(alice.balance - balanceBeforeAlice, 0.03 ether);
-        assertTrue(openPodio.rewardClaimed(compId, alice));
-
-        // Bob claims reward using compatibility wrapper claimReward
-        uint256 balanceBeforeBob = bob.balance;
-        vm.prank(bob);
-        openPodio.claimReward(compId);
-        assertEq(bob.balance - balanceBeforeBob, 0.03 ether);
-        assertTrue(openPodio.rewardClaimed(compId, bob));
-
-        // Charlie tries to claim reward but should fail since he voted for candidate 2
-        vm.prank(charlie);
-        vm.expectRevert("Did not vote for the winner");
-        openPodio.claimRewards(compId);
+        openPodio.claimRewards(newId);
+        assertEq(alice.balance - aliceBalanceBefore, 0.03 ether);
     }
 }

@@ -14,6 +14,78 @@ export const openPodioAbi = [
   },
   {
     "type": "function",
+    "name": "candidateCreatorName",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "candidateMediaUri",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "candidateProjectName",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "claimReward",
     "inputs": [
       {
@@ -40,6 +112,19 @@ export const openPodioAbi = [
   },
   {
     "type": "function",
+    "name": "competitionCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "competitions",
     "inputs": [
       {
@@ -60,9 +145,9 @@ export const openPodioAbi = [
         "internalType": "string"
       },
       {
-        "name": "mediaUri",
-        "type": "string",
-        "internalType": "string"
+        "name": "host",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "endTime",
@@ -99,40 +184,21 @@ export const openPodioAbi = [
   },
   {
     "type": "function",
-    "name": "createCompetition",
+    "name": "createConcurso",
     "inputs": [
-      {
-        "name": "_id",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "_title",
         "type": "string",
         "internalType": "string"
-      },
-      {
-        "name": "_mediaUri",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "_durationInMinutes",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_candidates",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "_candidateMediaUris",
-        "type": "string[]",
-        "internalType": "string[]"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -161,6 +227,49 @@ export const openPodioAbi = [
   },
   {
     "type": "function",
+    "name": "getCandidates",
+    "inputs": [
+      {
+        "name": "_competitionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "hasRegistered",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "hasVoted",
     "inputs": [
       {
@@ -182,6 +291,34 @@ export const openPodioAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "registerParticipant",
+    "inputs": [
+      {
+        "name": "_competitionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_projectName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "_creatorName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "_mediaUrl",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -219,6 +356,24 @@ export const openPodioAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "startVoting",
+    "inputs": [
+      {
+        "name": "_competitionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_durationInMinutes",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -264,43 +419,6 @@ export const openPodioAbi = [
   },
   {
     "type": "event",
-    "name": "CompetitionCreated",
-    "inputs": [
-      {
-        "name": "competitionId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "title",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      },
-      {
-        "name": "mediaUri",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      },
-      {
-        "name": "endTime",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "candidates",
-        "type": "address[]",
-        "indexed": false,
-        "internalType": "address[]"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "CompetitionResolved",
     "inputs": [
       {
@@ -320,6 +438,68 @@ export const openPodioAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ConcursoCreated",
+    "inputs": [
+      {
+        "name": "competitionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "title",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "host",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ParticipantRegistered",
+    "inputs": [
+      {
+        "name": "competitionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "participant",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "projectName",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "creatorName",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "mediaUrl",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -364,6 +544,25 @@ export const openPodioAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VotingStarted",
+    "inputs": [
+      {
+        "name": "competitionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "endTime",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
