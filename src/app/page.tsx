@@ -46,7 +46,7 @@ export default function Home() {
   const { latestId, refetch: refetchLatestId } = useLatestCompetitionId()
   const [selectedCompId, setSelectedCompId] = useState<bigint | null>(null)
   const [searchPin, setSearchPin] = useState('')
-  const [showLanding, setShowLanding] = useState(true)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [justCreatedPin, setJustCreatedPin] = useState<bigint | null>(null)
   const [dashboardLoading, setDashboardLoading] = useState(false)
 
@@ -65,7 +65,7 @@ export default function Home() {
       const pin = BigInt(searchPin)
       if (pin <= 0n) return
       setSelectedCompId(pin)
-      setShowLanding(false)
+      setIsCreateOpen(false)
       setSearchPin('')
     } catch {
       // ignore
@@ -327,7 +327,7 @@ export default function Home() {
       })
 
       // Navigate immediately
-      setShowLanding(false)
+      setIsCreateOpen(false)
 
       // Allow React to re-render and hooks to re-query with new selectedCompId
       await new Promise(resolve => setTimeout(resolve, 1500))
@@ -579,7 +579,13 @@ export default function Home() {
         <header className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-800/40 pb-6 gap-4">
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => { setShowLanding(true); setJustCreatedPin(null); setDashboardLoading(false); setCreateResult(null) }}
+              onClick={() => {
+                setSelectedCompId(latestId || null)
+                setJustCreatedPin(null)
+                setDashboardLoading(false)
+                setCreateResult(null)
+                setIsCreateOpen(false)
+              }}
               className="flex items-center gap-3 text-left focus:outline-none hover:opacity-90 transition-opacity"
             >
               <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-[#836EFD] to-indigo-500 flex items-center justify-center shadow-lg shadow-[#836EFD]/20">
@@ -592,37 +598,54 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Conditionally show navigation controls outside landing page */}
-          {!showLanding ? (
-            <div className="flex items-center gap-3">
+          <div className="flex items-center flex-wrap justify-center gap-3">
+            {/* Search/Load PIN Input */}
+            <form onSubmit={handleLoadPin} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1.5 pl-3">
+              <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">PIN CONCURSO:</span>
+              <input
+                type="number"
+                placeholder="Ej. 123456"
+                value={searchPin}
+                onChange={(e) => setSearchPin(e.target.value)}
+                className="w-24 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
+              />
               <button
-                onClick={() => { setShowLanding(true); setJustCreatedPin(null); setDashboardLoading(false); setCreateResult(null) }}
-                className="flex items-center gap-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800/80 px-3.5 py-2 text-xs font-bold text-slate-300 transition active:scale-95 shadow-sm"
+                type="submit"
+                className="rounded-xl bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border border-[#836EFD]/30 px-3.5 py-1.5 text-xs font-bold text-[#836EFD] transition active:scale-95 whitespace-nowrap"
               >
-                <svg className="w-4.5 h-4.5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                </svg>
-                <span>Inicio</span>
+                Cargar PIN
               </button>
+            </form>
 
-              <form onSubmit={handleLoadPin} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1.5 pl-3">
-                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">PIN CONCURSO:</span>
-                <input
-                  type="number"
-                  placeholder="Ej. 123456"
-                  value={searchPin}
-                  onChange={(e) => setSearchPin(e.target.value)}
-                  className="w-24 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
-                />
-                <button
-                  type="submit"
-                  className="rounded-xl bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border border-[#836EFD]/30 px-3.5 py-1.5 text-xs font-bold text-[#836EFD] transition active:scale-95 whitespace-nowrap"
-                >
-                  Cargar PIN
-                </button>
-              </form>
-            </div>
-          ) : null}
+            {/* Permanent Crear Concurso Button */}
+            <button
+              onClick={() => {
+                setIsCreateOpen(prev => !prev)
+                setCreateResult(null)
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 shadow-sm border ${
+                isCreateOpen 
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-400' 
+                  : 'bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border-[#836EFD]/30 text-[#836EFD]'
+              }`}
+            >
+              {isCreateOpen ? (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span>Cerrar</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Crear Concurso</span>
+                </>
+              )}
+            </button>
+          </div>
 
           <div>
             {isConnected ? (
@@ -677,187 +700,78 @@ export default function Home() {
         )}
 
         {/* Main Content Area */}
-        {showLanding ? (
-          // Onboarding Landing Page
-          <div className="flex-grow flex flex-col justify-center py-6 md:py-10 space-y-10 animate-fadeIn">
-            {/* Hero / Concept Explanation */}
-            <div className="text-center space-y-4 max-w-2xl mx-auto">
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight leading-none bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-                Salas de Competencia en Tiempo Real
-              </h1>
-              <p className="text-sm md:text-base text-slate-400 leading-relaxed">
-                Crea torneos instantáneos para tus proyectos, podcasts, música o pitches. Postula contenido, vota con micro-predicciones y gana recompensas en la red ultra-veloz de Monad.
-              </p>
-            </div>
+        <div className="space-y-12">
+          {/* Creation modal overlay */}
+          {isCreateOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+              <div className="relative w-full max-w-lg rounded-3xl border border-[#836EFD]/30 bg-slate-900/90 p-6 md:p-8 space-y-6 shadow-2xl shadow-purple-500/10">
+                <button
+                  onClick={() => setIsCreateOpen(false)}
+                  className="absolute top-4 right-4 rounded-xl bg-slate-800 hover:bg-slate-700 p-2 text-slate-400 hover:text-white transition"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
 
-            {/* Split Grid */}
-            <div className="grid gap-8 md:grid-cols-2 max-w-4xl mx-auto w-full px-2">
-              
-              {/* Left Column: Hostear un Concurso (Violet Theme) */}
-              <div className="relative rounded-3xl border border-purple-500/20 bg-slate-900/10 p-6 md:p-8 space-y-6 flex flex-col justify-between overflow-hidden shadow-xl shadow-purple-500/5 group hover:border-purple-500/30 transition-all duration-300">
-                <div className="absolute -top-12 -left-12 w-24 h-24 rounded-full bg-purple-500/10 blur-xl pointer-events-none group-hover:bg-purple-500/15 transition-all duration-300" />
-                
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-extrabold text-white">Hostear un Concurso</h2>
-                      <p className="text-xs text-purple-400/80 font-bold uppercase tracking-wider font-mono">Panel del Host</p>
-                    </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black text-white tracking-tight">Crear Nuevo Concurso</h3>
+                  <p className="text-xs text-slate-400">Registra una nueva sala de votación y competencia en la blockchain de Monad.</p>
+                </div>
+
+                <form onSubmit={handleCreateConcurso} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase">Nombre del Concurso</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Hackathon Monad #1"
+                      value={concursoTitle}
+                      onChange={(e) => setConcursoTitle(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition"
+                      required
+                    />
                   </div>
-                  <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
-                    Crea una nueva sala de competencia en la blockchain. Podrás recibir postulaciones, iniciar la votación y resolver los resultados on-chain.
-                  </p>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-slate-800/40">
-                  {isConnected ? (
-                    <form onSubmit={handleCreateConcurso} className="space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nombre del Concurso</label>
-                        <input
-                          type="text"
-                          placeholder="Ej. Torneo de Pitches #1"
-                          value={concursoTitle}
-                          onChange={(e) => setConcursoTitle(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descripción del Concurso</label>
-                        <textarea
-                          placeholder="Describe el concurso, las reglas o el formato del contenido..."
-                          value={concursoDescription}
-                          onChange={(e) => setConcursoDescription(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition resize-none h-16"
-                          required
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={createLoading}
-                        className="w-full rounded-xl bg-gradient-to-r from-[#836EFD] to-indigo-600 hover:from-[#836EFD]/95 hover:to-indigo-600/95 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
-                      >
-                        {createLoading ? (
-                          <>
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            <span>Creando Concurso...</span>
-                          </>
-                        ) : (
-                          <span>Crear Sala de Concurso</span>
-                        )}
-                      </button>
-
-                      <p className="text-[10px] text-center text-[#836EFD] font-mono font-bold">
-                        Se generará un PIN único de 6 dígitos en la blockchain
-                      </p>
-                    </form>
-                  ) : (
-                    <div className="space-y-3 text-center py-2">
-                      <p className="text-xs text-slate-500">Conecta tu billetera para registrar un concurso en la blockchain.</p>
-                      <button
-                        onClick={connectWallet}
-                        className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 shadow-md shadow-[#836EFD]/20"
-                      >
-                        Conectar Billetera Mozi
-                      </button>
-                    </div>
-                  )}
-
-                  {createResult && (
-                    <div className={`p-3 rounded-xl text-xs border ${
-                      createResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                    }`}>
-                      {createResult.message}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column: Unirse a un Concurso (Cyan Theme) */}
-              <div className="relative rounded-3xl border border-cyan-500/20 bg-slate-900/10 p-6 md:p-8 space-y-6 flex flex-col justify-between overflow-hidden shadow-xl shadow-cyan-500/5 group hover:border-cyan-500/30 transition-all duration-300">
-                <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-cyan-500/10 blur-xl pointer-events-none group-hover:bg-cyan-500/15 transition-all duration-300" />
-                
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-extrabold text-white">Unirse a un Concurso</h2>
-                      <p className="text-xs text-cyan-400/80 font-bold uppercase tracking-wider font-mono">Panel del Votante / Creador</p>
-                    </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase">Descripción</label>
+                    <textarea
+                      placeholder="Describe las reglas, formato o premios..."
+                      value={concursoDescription}
+                      onChange={(e) => setConcursoDescription(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition resize-none h-24"
+                      required
+                    />
                   </div>
-                  <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
-                    Ingresa el PIN numérico de un concurso creado para postular tus proyectos, escuchar o ver las propuestas de los participantes, y votar para ganar.
-                  </p>
-                </div>
 
-                <div className="space-y-4 pt-4 border-t border-slate-800/40">
-                  <form onSubmit={(e) => {
-                    e.preventDefault()
-                    if (!searchPin) return
-                    try {
-                      const pin = BigInt(searchPin)
-                      if (pin <= 0n) return
-                      setSelectedCompId(pin)
-                      setShowLanding(false) // Transition to dashboard
-                      setSearchPin('')
-                    } catch {
-                      // ignore
-                    }
-                  }} className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">PIN del Concurso</label>
-                      <input
-                        type="number"
-                        placeholder="Ej. 123456"
-                        value={searchPin}
-                        onChange={(e) => setSearchPin(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-slate-100 font-mono font-extrabold text-lg focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 transition tracking-widest"
-                        required
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 py-3 text-xs font-black text-white transition duration-200 active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20"
-                    >
-                      <span>Ingresar a la Sala</span>
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                      </svg>
-                    </button>
-
-                    {latestId !== undefined && latestId > 0n && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedCompId(latestId)
-                          setShowLanding(false)
-                        }}
-                        className="w-full text-center text-[10px] text-slate-500 hover:text-cyan-400 font-mono transition-colors"
-                      >
-                        O ingresar al último concurso activo: <span className="text-cyan-500 underline font-bold">PIN #{latestId.toString()}</span>
-                      </button>
+                  <button
+                    type="submit"
+                    disabled={createLoading}
+                    className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
+                  >
+                    {createLoading ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <span>Creando Concurso...</span>
+                      </>
+                    ) : (
+                      <span>Crear Concurso</span>
                     )}
-                  </form>
-                </div>
-              </div>
+                  </button>
 
+                  <p className="text-[10px] text-center text-[#836EFD] font-mono font-bold">
+                    Se generará un PIN único de 6 dígitos en la blockchain
+                  </p>
+                </form>
+
+                {createResult && (
+                  <div className={`p-3 rounded-xl text-xs border ${
+                    createResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                  }`}>
+                    {createResult.message}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="space-y-12">
+          )}
 
           {/* Loading state after just creating a contest */}
           {dashboardLoading && justCreatedPin !== null && (
@@ -1681,7 +1595,6 @@ export default function Home() {
           )}
 
           </div>
-        )}
 
         {/* Footer */}
         <footer className="border-t border-slate-800/40 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
