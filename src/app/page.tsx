@@ -1,1760 +1,794 @@
 'use client'
 
-import { useBalance, usePublicClient } from 'wagmi'
-import { useState, useEffect } from 'react'
-import { formatUnits, decodeEventLog } from 'viem'
-import { openPodioAbi } from '../config/abi'
-import { useMonadProvider } from '../hooks/useMonadProvider'
-import { CountdownTimer } from '../components/CountdownTimer'
-import { MediaCard } from '../components/MediaCard'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x356543d368819052604081206007015460ff1680') as `0x${string}`
+/* ─────────────────────────────────────────────
+   TYPES
+   ───────────────────────────────────────────── */
+type Screen = 'create' | 'participants' | 'showcase'
 
+interface Participant {
+  id: string
+  projectName: string
+  creator: string
+  mediaUrl: string
+  votes: number
+}
+
+interface ContestData {
+  name: string
+  description: string
+  durationMinutes: number
+}
+
+/* ─────────────────────────────────────────────
+   HELPERS
+   ───────────────────────────────────────────── */
+function generatePin(): string {
+  return String(Math.floor(100000 + Math.random() * 900000))
+}
+
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+  return m ? m[1] : null
+}
+
+function classifyMedia(url: string): 'youtube' | 'video' | 'audio' | 'image' | 'other' {
+  if (!url) return 'other'
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube'
+  if (/\.(mp4|webm|mov)(\?|$)/i.test(url)) return 'video'
+  if (/\.(mp3|wav|ogg|flac|aac)(\?|$)/i.test(url)) return 'audio'
+  if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(url)) return 'image'
+  return 'other'
+}
+
+/* ─────────────────────────────────────────────
+   MAIN COMPONENT
+   ───────────────────────────────────────────── */
 export default function Home() {
   const [mounted, setMounted] = useState(false)
-  const [customEndTime, setCustomEndTime] = useState<number | undefined>(undefined)
-  const publicClient = usePublicClient()
-  
-  // Custom hook managing Mozi Wallet and Monad Testnet connections
-  const {
-    address,
-    isConnected,
-    isConnecting,
-    connectError,
-    isWrongNetwork,
-    connectWallet,
-    disconnectWallet,
-    switchNetwork,
-    createConcurso,
-    registerParticipant,
-    startVoting,
-    voteInCompetition,
-    resolveCompetition,
-    claimRewards,
-    useCompetitionCount,
-    useLatestCompetitionId,
-    useCompetitionDetails,
-    useCandidates,
-    useCandidatesMetadata,
-    useUserVoteSelection,
-    useHasClaimedReward,
-    isVoting,
-  } = useMonadProvider()
+  useEffect(() => setMounted(true), [])
 
-  // Find current/latest competition ID
-  const { count: compCount, refetch: refetchCompCount } = useCompetitionCount()
-  const { latestId, refetch: refetchLatestId } = useLatestCompetitionId()
-  const [selectedCompId, setSelectedCompId] = useState<bigint | null>(null)
-  const [searchPin, setSearchPin] = useState('')
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [justCreatedPin, setJustCreatedPin] = useState<bigint | null>(null)
-  const [dashboardLoading, setDashboardLoading] = useState(false)
+  /* ── Navigation ── */
+  const [currentScreen, setCurrentScreen] = useState<Screen>('create')
 
-  useEffect(() => {
-    if (latestId && selectedCompId === null) {
-      setSelectedCompId(latestId)
-    }
-  }, [latestId, selectedCompId])
+  /* ── Contest Data ── */
+  const [contest, setContest] = useState<ContestData>({ name: '', description: '', durationMinutes: 2 })
+  const [pin] = useState(generatePin)
 
-  const currentCompId = selectedCompId || latestId || 0n
+  /* ── Participants ── */
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newProject, setNewProject] = useState('')
+  const [newCreator, setNewCreator] = useState('')
+  const [newMediaUrl, setNewMediaUrl] = useState('')
 
-  const handleLoadPin = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!searchPin) return
-    try {
-      const pin = BigInt(searchPin)
-      if (pin <= 0n) return
-      setSelectedCompId(pin)
-      setIsCreateOpen(false)
-      setSearchPin('')
-    } catch {
-      // ignore
-    }
-  }
+  /* ── Showcase / Voting ── */
+  const [deadline, setDeadline] = useState<number | null>(null)
+  const [timeLeft, setTimeLeft] = useState({ m: 0, s: 0, ms: 0 })
+  const [hasVoted, setHasVoted] = useState(false)
+  const [votingFor, setVotingFor] = useState<string | null>(null)
+  const [competitionEnded, setCompetitionEnded] = useState(false)
+  const [showReveal, setShowReveal] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Fetch real-time on-chain competition state if available
-  const { details: compDetails, refetch: refetchCompDetails } = useCompetitionDetails(currentCompId)
-  const { candidates, refetch: refetchCandidates } = useCandidates(currentCompId)
-  const { metadata: candidatesMetadata, refetch: refetchCandidatesMetadata } = useCandidatesMetadata(currentCompId, candidates)
-  const { voterSelection, refetch: refetchVoteSelection } = useUserVoteSelection(currentCompId, address)
-  const { hasClaimed, refetch: refetchClaimed } = useHasClaimedReward(currentCompId, address)
+  /* ── Simulated wallet ── */
+  const simulatedWallet = '0x7a3F…dE91'
+  const totalPool = participants.reduce((a, p) => a + p.votes, 0) * 0.1
 
-  // Map dynamic candidates registered on-chain
-  const projects = (candidates || []).map((addr, index) => {
-    const nameResult = candidatesMetadata?.[index * 3]
-    const creatorResult = candidatesMetadata?.[index * 3 + 1]
-    const uriResult = candidatesMetadata?.[index * 3 + 2]
-
-    const title = (nameResult?.result as unknown as string) || `Proyecto #${index + 1}`
-    const author = (creatorResult?.result as unknown as string) || `Creador ${addr.slice(0, 6)}`
-    const src = (uriResult?.result as unknown as string) || ''
-
-    // Assign prediction market odds
-    let odds = 'Multiplicador: 2.0x'
-    let highlightOdds = false
-    if (index === 0) {
-      odds = 'Multiplicador: 2.1x'
-    } else if (index === 1) {
-      odds = 'Multiplicador: 5.4x'
-      highlightOdds = true
-    } else if (index === 2) {
-      odds = 'Multiplicador: 1.5x'
-    }
-
-    return {
-      title,
-      author,
-      description: `Un proyecto multimedia innovador registrado on-chain por la wallet ${addr.slice(0, 6)}...${addr.slice(-4)}.`,
-      src,
-      candidateAddress: addr,
-      odds,
-      highlightOdds,
-    }
-  })
-
-  const totalPoolNumber = compDetails ? Number(formatUnits(compDetails.totalPool, 18)) : 0.0
-  const doesCompExist = compDetails && compDetails.id > 0n;
-
-  const [faucetLoading, setFaucetLoading] = useState(false)
-  const [faucetResult, setFaucetResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
-  
-  // Voting status tracker
-  const [voteResult, setVoteResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
-  const [claimResult, setClaimResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
-  const [resolveResult, setResolveResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
-  const [isResolving, setIsResolving] = useState(false)
-  const [isClaiming, setIsClaiming] = useState(false)
-
-  // Form States
-  const [concursoTitle, setConcursoTitle] = useState('')
-  const [concursoDescription, setConcursoDescription] = useState('')
-  const [createLoading, setCreateLoading] = useState(false)
-  const [createResult, setCreateResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
-
-  const [projectName, setProjectName] = useState('')
-  const [creatorName, setCreatorName] = useState('')
-  const [mediaUrl, setMediaUrl] = useState('')
-  const [candidateWallet, setCandidateWallet] = useState('')
-  const [mediaType, setMediaType] = useState('youtube')
-  const [postulateLoading, setPostulateLoading] = useState(false)
-  const [postulateResult, setPostulateResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
-  const [showAddParticipant, setShowAddParticipant] = useState(false)
-  const [dragIdx, setDragIdx] = useState<number | null>(null)
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
-  const [projectOrder, setProjectOrder] = useState<number[]>([])
-
-  // Default candidate wallet to logged in address
-  useEffect(() => {
-    if (address) {
-      setCandidateWallet(address)
-    }
-  }, [address])
-
-  // Sync projectOrder when projects change
-  useEffect(() => {
-    if (projects && projects.length > 0) {
-      setProjectOrder(projects.map((_: unknown, i: number) => i))
-    }
-  }, [projects])
-
-  const [votingDuration, setVotingDuration] = useState('10') // default 10 mins
-  const [startVotingLoading, setStartVotingLoading] = useState(false)
-  const [startVotingResult, setStartVotingResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
-
-  // Real-time lifecycle states
-  const [isExpired, setIsExpired] = useState(false)
-  const [txCount, setTxCount] = useState(12)
-
-  // Fetch balance for connected account
-  const { data: balanceData, refetch: refetchBalance } = useBalance({
-    address,
-  })
-
-  // Setup mount initialization
-  useEffect(() => {
-    setMounted(true)
+  /* ── Countdown logic ── */
+  const endCompetition = useCallback(() => {
+    setCompetitionEnded(true)
+    if (timerRef.current) clearInterval(timerRef.current)
+    setTimeout(() => setShowReveal(true), 800)
   }, [])
 
-  // Sync customEndTime from contract or fallback timer
   useEffect(() => {
-    if (!mounted) return
-    if (compDetails && compDetails.endTime > 0n) {
-      setCustomEndTime(Number(compDetails.endTime))
-    } else {
-      setCustomEndTime(undefined)
-    }
-  }, [mounted, compDetails])
-
-  // Timer status loop
-  useEffect(() => {
-    if (!customEndTime) {
-      setIsExpired(false)
-      return
-    }
-    const checkExpiry = () => {
-      const now = Math.floor(Date.now() / 1000)
-      if (now >= customEndTime) {
-        setIsExpired(true)
-      } else {
-        setIsExpired(false)
+    if (!deadline) return
+    timerRef.current = setInterval(() => {
+      const diff = deadline - Date.now()
+      if (diff <= 0) {
+        setTimeLeft({ m: 0, s: 0, ms: 0 })
+        endCompetition()
+        return
       }
-    }
-    checkExpiry()
-    const interval = setInterval(checkExpiry, 1000)
-    return () => clearInterval(interval)
-  }, [customEndTime])
-
-  // Increments simulated txCount count dynamically when active
-  useEffect(() => {
-    if (isExpired || (compDetails && compDetails.state !== 1)) return
-    const interval = setInterval(() => {
-      setTxCount((prev) => prev + Math.floor(Math.random() * 2) + 1)
-    }, 4000)
-    return () => clearInterval(interval)
-  }, [isExpired, compDetails])
-
-  const handleRequestFaucet = async () => {
-    if (!address) return
-    setFaucetLoading(true)
-    setFaucetResult(null)
-    try {
-      const response = await fetch('https://agents.devnads.com/v1/faucet', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chainId: 10143,
-          address: address,
-        }),
+      setTimeLeft({
+        m: Math.floor(diff / 60000),
+        s: Math.floor((diff % 60000) / 1000),
+        ms: Math.floor((diff % 1000) / 10),
       })
+    }, 37)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [deadline, endCompetition])
 
-      const data = await response.json()
-      if (response.ok && data.txHash) {
-        setFaucetResult({
-          success: true,
-          message: `¡Se ha solicitado con éxito 1 MONAD!`,
-          txHash: data.txHash,
-        })
-        setTimeout(() => refetchBalance(), 3000)
-      } else {
-        setFaucetResult({
-          success: false,
-          message: data.message || 'La solicitud al faucet falló. Es posible que tengas un límite de frecuencia activo.',
-        })
-      }
-    } catch (err: any) {
-      setFaucetResult({
-        success: false,
-        message: err.message || 'Ocurrió un error al conectar con la API del faucet.',
-      })
-    } finally {
-      setFaucetLoading(false)
-    }
+  /* ── Handlers ── */
+  const handleCreateContest = () => {
+    if (!contest.name.trim()) return
+    setCurrentScreen('participants')
   }
 
-  const handleCreateConcurso = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!concursoTitle) return
-    setCreateLoading(true)
-    setCreateResult(null)
-    try {
-      const hash = await createConcurso(concursoTitle, concursoDescription)
-      setCreateResult({
-        success: true,
-        message: '¡Petición de creación enviada! Esperando confirmación en blockchain...',
-        txHash: hash,
-      })
-      const savedTitle = concursoTitle
-      setConcursoTitle('')
-      setConcursoDescription('')
-      
-      let newPin: bigint | undefined = undefined
-
-      // Wait for confirmation on the blockchain
-      if (publicClient) {
-        const receipt = await publicClient.waitForTransactionReceipt({ hash })
-        
-        // 1. Try to decode the ConcursoCreated event from the transaction receipt logs
-        for (const log of receipt.logs) {
-          try {
-            const decoded = decodeEventLog({
-              abi: openPodioAbi,
-              eventName: 'ConcursoCreated',
-              topics: log.topics,
-              data: log.data,
-            })
-            if (decoded && decoded.args) {
-              newPin = (decoded.args as any).competitionId as bigint
-              break
-            }
-          } catch (e) {
-            // Ignore if logs do not match the event signature
-          }
-        }
-
-        // 2. Fallback: Query latestCompetitionId directly from the blockchain
-        if (!newPin) {
-          try {
-            const latestIdOnChain = await publicClient.readContract({
-              address: CONTRACT_ADDRESS,
-              abi: openPodioAbi,
-              functionName: 'latestCompetitionId',
-            })
-            if (latestIdOnChain && latestIdOnChain > 0n) {
-              newPin = latestIdOnChain as bigint
-            }
-          } catch (e) {
-            // Ignore
-          }
-        }
-
-        // 3. Fallback: Query competitionCount directly from the blockchain (if old contract)
-        if (!newPin) {
-          try {
-            const countOnChain = await publicClient.readContract({
-              address: CONTRACT_ADDRESS,
-              abi: openPodioAbi,
-              functionName: 'competitionCount',
-            })
-            if (countOnChain && countOnChain > 0n) {
-              newPin = countOnChain as bigint
-            }
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-      
-      // ALWAYS navigate to the dashboard after a successful transaction
-      const resolvedPin = newPin || 0n
-      setSelectedCompId(resolvedPin)
-      setJustCreatedPin(resolvedPin)
-      setDashboardLoading(true)
-      setCreateResult({
-        success: true,
-        message: `¡Concurso "${savedTitle}" creado con éxito! PIN: ${resolvedPin.toString()}`,
-        txHash: hash,
-      })
-
-      // Navigate immediately
-      setIsCreateOpen(false)
-
-      // Allow React to re-render and hooks to re-query with new selectedCompId
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      await refetchCompCount()
-      await refetchLatestId()
-      await refetchCompDetails()
-      await refetchCandidates()
-      setDashboardLoading(false)
-
-    } catch (err: any) {
-      setCreateResult({
-        success: false,
-        message: err.shortMessage || err.message || 'Error al crear el concurso.',
-      })
-    } finally {
-      setCreateLoading(false)
-    }
+  const handleAddParticipant = () => {
+    if (!newProject.trim() || !newCreator.trim()) return
+    setParticipants(prev => [...prev, {
+      id: crypto.randomUUID(),
+      projectName: newProject.trim(),
+      creator: newCreator.trim(),
+      mediaUrl: newMediaUrl.trim(),
+      votes: 0,
+    }])
+    setNewProject('')
+    setNewCreator('')
+    setNewMediaUrl('')
+    setShowAddForm(false)
   }
 
-  const handlePostulateContent = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!projectName || !creatorName || !mediaUrl || !candidateWallet) return
-    if (!candidateWallet.startsWith('0x')) {
-      setPostulateResult({
-        success: false,
-        message: 'La dirección de la wallet del competidor debe comenzar con 0x y ser válida.',
-      })
-      return
-    }
-    setPostulateLoading(true)
-    setPostulateResult(null)
-    try {
-      const fullMediaUrl = `${mediaType}::${mediaUrl}`
-      const hash = await registerParticipant(
-        currentCompId,
-        candidateWallet as `0x${string}`,
-        projectName,
-        creatorName,
-        fullMediaUrl
-      )
-      setPostulateResult({
-        success: true,
-        message: '¡Postulación enviada con éxito! Esperando confirmación...',
-        txHash: hash,
-      })
-      
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash })
-      }
-
-      setPostulateResult({
-        success: true,
-        message: '¡Postulación confirmada con éxito!',
-        txHash: hash,
-      })
-      setProjectName('')
-      setCreatorName('')
-      setMediaUrl('')
-      setCandidateWallet(address || '')
-      setMediaType('youtube')
-      
-      refetchCandidates()
-      refetchCandidatesMetadata()
-    } catch (err: any) {
-      setPostulateResult({
-        success: false,
-        message: err.shortMessage || err.message || 'Error al postular contenido.',
-      })
-    } finally {
-      setPostulateLoading(false)
-    }
+  const handleRemoveParticipant = (id: string) => {
+    setParticipants(prev => prev.filter(p => p.id !== id))
   }
 
-  const handleStartVoting = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const duration = BigInt(votingDuration)
-    if (duration <= 0n) return
-    setStartVotingLoading(true)
-    setStartVotingResult(null)
-    try {
-      const hash = await startVoting(currentCompId, duration)
-      setStartVotingResult({
-        success: true,
-        message: '¡Periodo de votación iniciado! Esperando confirmación...',
-        txHash: hash,
-      })
-
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash })
-      }
-
-      setStartVotingResult({
-        success: true,
-        message: '¡Periodo de votación confirmado y activo!',
-        txHash: hash,
-      })
-
-      refetchCompDetails()
-    } catch (err: any) {
-      setStartVotingResult({
-        success: false,
-        message: err.shortMessage || err.message || 'Error al iniciar la votación.',
-      })
-    } finally {
-      setStartVotingLoading(false)
-    }
+  const handleLaunchCompetition = () => {
+    if (participants.length < 2) return
+    setDeadline(Date.now() + contest.durationMinutes * 60 * 1000)
+    setCurrentScreen('showcase')
   }
 
-  const handleVote = async (candidate: `0x${string}`, title: string) => {
-    if (!isConnected) {
-      connectWallet()
-      return
-    }
-    if (isWrongNetwork) {
-      switchNetwork()
-      return
-    }
-
-    try {
-      const hash = await voteInCompetition(currentCompId, candidate)
-      setVoteResult({
-        success: true,
-        message: `¡Voto enviado por ${title}! Esperando confirmación...`,
-        txHash: hash,
-      })
-
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash })
-      }
-
-      setVoteResult({
-        success: true,
-        message: `¡Votado con éxito por ${title}!`,
-        txHash: hash,
-      })
-
-      refetchBalance()
-      refetchCompDetails()
-      refetchVoteSelection()
-    } catch (err: any) {
-      setVoteResult({
-        success: false,
-        message: err.shortMessage || err.message || 'Transacción rechazada o fallida.',
-      })
-    }
+  const handleVote = (id: string) => {
+    if (hasVoted || competitionEnded) return
+    setVotingFor(id)
+    setTimeout(() => {
+      setParticipants(prev => prev.map(p => p.id === id ? { ...p, votes: p.votes + 1 } : p))
+      setHasVoted(true)
+      setVotingFor(null)
+    }, 400)
   }
 
-  const handleResolve = async () => {
-    setResolveResult(null)
-    setIsResolving(true)
-    try {
-      const hash = await resolveCompetition(currentCompId)
-      setResolveResult({
-        success: true,
-        message: '¡Resolución enviada! Esperando confirmación...',
-        txHash: hash,
-      })
-
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash })
-      }
-
-      setResolveResult({
-        success: true,
-        message: '¡Competencia resuelta con éxito en Monad!',
-        txHash: hash,
-      })
-
-      refetchCompDetails()
-    } catch (err: any) {
-      setResolveResult({
-        success: false,
-        message: err.shortMessage || err.message || 'Error al resolver la competencia.',
-      })
-    } finally {
-      setIsResolving(false)
-    }
+  const handleSimulateEnd = () => {
+    endCompetition()
   }
 
-  const handleClaimRewards = async () => {
-    setClaimResult(null)
-    setIsClaiming(true)
-    try {
-      const hash = await claimRewards(currentCompId)
-      setClaimResult({
-        success: true,
-        message: '¡Reclamación enviada! Esperando confirmación...',
-        txHash: hash,
-      })
+  /* ── Computed: sorted results ── */
+  const sortedByVotes = [...participants].sort((a, b) => b.votes - a.votes)
+  const totalVotes = participants.reduce((a, p) => a + p.votes, 0)
 
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash })
-      }
+  if (!mounted) return null
 
-      setClaimResult({
-        success: true,
-        message: '¡Recompensa reclamada con éxito!',
-        txHash: hash,
-      })
-
-      refetchBalance()
-      refetchClaimed()
-    } catch (err: any) {
-      setClaimResult({
-        success: false,
-        message: err.shortMessage || err.message || 'Error al reclamar la recompensa.',
-      })
-    } finally {
-      setIsClaiming(false)
-    }
-  }
-
-  const getWinnerName = () => {
-    if (!compDetails || !compDetails.resolved) return 'Pendiente de Resolución'
-    const winnerAddr = compDetails.winner.toLowerCase() as `0x${string}`
-    const winningProject = projects.find(p => p.candidateAddress.toLowerCase() === winnerAddr)
-    if (winningProject) return winningProject.title
-    return `${winnerAddr.slice(0, 6)}...${winnerAddr.slice(-4)}`
-  }
-
-  const getCompStatus = (): 'upcoming' | 'active' | 'ended' => {
-    if (!compDetails) return 'upcoming'
-    if (compDetails.state === 0) return 'upcoming'
-    if (compDetails.state === 1 && !isExpired) return 'active'
-    return 'ended'
-  }
-
-  if (!mounted) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-500 border-t-transparent"></div>
-          <p className="text-sm font-medium tracking-wide">Cargando OpenPod.io...</p>
-        </div>
-      </div>
-    )
-  }
-
+  /* ─────────────────────────────────────────────
+     RENDER
+     ───────────────────────────────────────────── */
   return (
-    <div className="relative min-h-screen bg-slate-950 overflow-hidden font-sans text-slate-100 selection:bg-[#836EFD]/30 selection:text-purple-200">
-      {/* Background blobs */}
-      <div className="absolute -top-[40%] -left-[20%] h-[80%] w-[80%] rounded-full bg-purple-900/5 blur-[150px] pointer-events-none" />
-      <div className="absolute -bottom-[30%] -right-[10%] h-[70%] w-[70%] rounded-full bg-violet-800/5 blur-[130px] pointer-events-none" />
-
-      {/* Main Layout Container */}
-      <main className="relative z-10 mx-auto max-w-6xl px-6 py-8 md:py-12 flex flex-col min-h-screen justify-between gap-10">
-        
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-800/40 pb-6 gap-4">
+    <div className="min-h-screen" style={{ background: '#0B0B0F' }}>
+      {/* ════════════ GLOBAL HEADER ════════════ */}
+      <header className="sticky top-0 z-50 border-b border-slate-800/60" style={{ background: 'rgba(11,11,15,0.92)', backdropFilter: 'blur(20px)' }}>
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => {
-                setSelectedCompId(latestId || null)
-                setJustCreatedPin(null)
-                setDashboardLoading(false)
-                setCreateResult(null)
-                setIsCreateOpen(false)
-              }}
-              className="flex items-center gap-3 text-left focus:outline-none hover:opacity-90 transition-opacity"
-            >
-              <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-[#836EFD] to-indigo-500 flex items-center justify-center shadow-lg shadow-[#836EFD]/20">
-                <span className="font-black text-white text-lg">O</span>
-                <div className="absolute inset-0 rounded-xl border border-white/20 animate-pulse" />
-              </div>
-              <div>
-                <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent block">OpenPod.io</span>
-              </div>
-            </button>
-          </div>
-
-          <div className="flex items-center flex-wrap justify-center gap-3">
-            {/* Search/Load PIN Input */}
-            <form onSubmit={handleLoadPin} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1.5 pl-3">
-              <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">PIN CONCURSO:</span>
-              <input
-                type="number"
-                placeholder="Ej. 123456"
-                value={searchPin}
-                onChange={(e) => setSearchPin(e.target.value)}
-                className="w-24 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
-              />
-              <button
-                type="submit"
-                className="rounded-xl bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border border-[#836EFD]/30 px-3.5 py-1.5 text-xs font-bold text-[#836EFD] transition active:scale-95 whitespace-nowrap"
-              >
-                Cargar PIN
-              </button>
-            </form>
-
-            {/* Permanent Crear Concurso Button */}
-            <button
-              onClick={() => {
-                setIsCreateOpen(prev => !prev)
-                setCreateResult(null)
-              }}
-              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 shadow-sm border ${
-                isCreateOpen 
-                  ? 'bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-400' 
-                  : 'bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border-[#836EFD]/30 text-[#836EFD]'
-              }`}
-            >
-              {isCreateOpen ? (
-                <>
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  <span>Cerrar</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>Crear Concurso</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          <div>
-            {isConnected ? (
-              <div className="flex items-center gap-3">
-                <div className="hidden sm:block text-right">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mozi Conectado</p>
-                  <p className="text-sm font-semibold text-slate-200 font-mono">
-                    {address?.slice(0, 6)}...{address?.slice(-4)}
-                  </p>
-                </div>
-                <button
-                  onClick={disconnectWallet}
-                  className="rounded-lg bg-slate-900 hover:bg-slate-800 px-4 py-2 text-sm font-medium border border-slate-700 transition duration-200 active:scale-95"
-                >
-                  Desconectar
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={connectWallet}
-                disabled={isConnecting}
-                className="relative group overflow-hidden rounded-lg bg-gradient-to-r from-[#836EFD] to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#836EFD]/25 transition duration-200 hover:shadow-[#836EFD]/40 active:scale-95 disabled:opacity-50"
-              >
-                <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                {isConnecting ? 'Conectando...' : 'Conectar Billetera Mozi'}
-              </button>
-            )}
-          </div>
-        </header>
-
-        {/* Top Network Warning */}
-        {isWrongNetwork && (
-          <div className="rounded-2xl bg-rose-500/5 border border-rose-500/25 p-5 flex flex-col md:flex-row items-center justify-between gap-4 animate-pulse">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-rose-300">Red no soportada detectada</h4>
-                <p className="text-xs text-rose-400/80">Tu billetera está conectada a una red diferente. Cambia a Monad Testnet para interactuar.</p>
-              </div>
+            <div className="relative flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #836EFD 0%, #00F0FF 100%)' }}>
+              <span className="text-sm font-black text-white">OP</span>
+              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 animate-pulse" style={{ borderColor: '#0B0B0F', background: '#22c55e' }} />
             </div>
-            <button
-              onClick={switchNetwork}
-              className="w-full md:w-auto rounded-lg bg-rose-500 hover:bg-rose-600 px-4 py-2.5 text-xs font-bold text-white transition duration-200 active:scale-95 whitespace-nowrap shadow-lg shadow-rose-500/20"
-            >
-              Cambiar a Monad Testnet
-            </button>
+            <div>
+              <h1 className="text-sm font-black tracking-tight text-white" style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                OpenPod<span style={{ color: '#836EFD' }}>.io</span>
+              </h1>
+              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>Demo Mode • Hackathon</p>
+            </div>
           </div>
+
+          {/* Navigation pills */}
+          <div className="hidden sm:flex items-center gap-1 rounded-xl p-1" style={{ background: 'rgba(30,30,40,0.6)' }}>
+            {(['create', 'participants', 'showcase'] as Screen[]).map((s, i) => (
+              <button
+                key={s}
+                disabled={
+                  (s === 'participants' && !contest.name.trim()) ||
+                  (s === 'showcase' && !deadline)
+                }
+                onClick={() => {
+                  if (s === 'showcase' && !deadline) return
+                  if (s === 'participants' && !contest.name.trim()) return
+                  setCurrentScreen(s)
+                }}
+                className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{
+                  background: currentScreen === s ? '#836EFD' : 'transparent',
+                  color: currentScreen === s ? '#fff' : '#94a3b8',
+                }}
+              >
+                {i + 1}. {s === 'create' ? 'Crear' : s === 'participants' ? 'Participantes' : 'Showcase'}
+              </button>
+            ))}
+          </div>
+
+          {/* Simulated wallet */}
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:block text-right">
+              <p className="text-[9px] uppercase tracking-widest font-bold" style={{ color: '#64748b' }}>Mozi Wallet</p>
+              <p className="text-[11px] font-bold text-slate-300" style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>{simulatedWallet}</p>
+            </div>
+            <div className="h-8 w-8 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #836EFD, #00F0FF)' }}>
+              <span className="text-[10px] font-black text-white">M</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 space-y-8">
+
+        {/* ════════════════════════════════════════
+            SCREEN A: CREATE CONTEST
+           ════════════════════════════════════════ */}
+        {currentScreen === 'create' && (
+          <section className="animate-in fade-in">
+            {/* Hero */}
+            <div className="text-center mb-10 space-y-3">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest" style={{ background: 'rgba(131,110,253,0.12)', color: '#836EFD', border: '1px solid rgba(131,110,253,0.25)' }}>
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#836EFD' }} />
+                Modo Demo Activo
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                Crea tu <span style={{ color: '#836EFD' }}>Concurso</span>
+              </h2>
+              <p className="text-sm text-slate-400 max-w-md mx-auto">
+                Configura una competencia multimedia descentralizada. Todos los estados se simulan localmente.
+              </p>
+            </div>
+
+            {/* Form Card */}
+            <div className="max-w-lg mx-auto rounded-3xl border p-6 sm:p-8 space-y-6" style={{ background: 'rgba(15,15,22,0.8)', borderColor: 'rgba(51,51,68,0.5)' }}>
+              {/* PIN Badge */}
+              <div className="flex items-center justify-center">
+                <div className="flex items-center gap-3 px-5 py-3 rounded-2xl" style={{ background: 'rgba(131,110,253,0.08)', border: '1px solid rgba(131,110,253,0.2)' }}>
+                  <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>PIN</span>
+                  <span className="text-2xl font-black tracking-[0.25em]" style={{ color: '#836EFD', fontFamily: 'var(--font-geist-mono, monospace)' }}>{pin}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Nombre del Concurso</label>
+                <input
+                  type="text"
+                  placeholder="Ej. Battle of the Beats Vol.3"
+                  value={contest.name}
+                  onChange={e => setContest(c => ({ ...c, name: e.target.value }))}
+                  className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none transition-all"
+                  style={{ background: '#0B0B0F', border: '1px solid rgba(51,51,68,0.6)', }}
+                  onFocus={e => e.target.style.borderColor = '#836EFD'}
+                  onBlur={e => e.target.style.borderColor = 'rgba(51,51,68,0.6)'}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Descripción</label>
+                <textarea
+                  rows={3}
+                  placeholder="Describe las reglas y premios del concurso…"
+                  value={contest.description}
+                  onChange={e => setContest(c => ({ ...c, description: e.target.value }))}
+                  className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none transition-all resize-none"
+                  style={{ background: '#0B0B0F', border: '1px solid rgba(51,51,68,0.6)' }}
+                  onFocus={e => e.target.style.borderColor = '#836EFD'}
+                  onBlur={e => e.target.style.borderColor = 'rgba(51,51,68,0.6)'}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Duración de la Competencia</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {[1, 2, 5].map(min => (
+                    <button
+                      key={min}
+                      type="button"
+                      onClick={() => setContest(c => ({ ...c, durationMinutes: min }))}
+                      className="rounded-xl py-3 text-sm font-bold transition-all"
+                      style={{
+                        background: contest.durationMinutes === min ? '#836EFD' : 'rgba(15,15,22,0.9)',
+                        color: contest.durationMinutes === min ? '#fff' : '#94a3b8',
+                        border: `1px solid ${contest.durationMinutes === min ? '#836EFD' : 'rgba(51,51,68,0.6)'}`,
+                        boxShadow: contest.durationMinutes === min ? '0 4px 20px rgba(131,110,253,0.3)' : 'none',
+                      }}
+                    >
+                      {min} min
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={handleCreateContest}
+                disabled={!contest.name.trim()}
+                className="w-full rounded-xl py-3.5 text-sm font-black text-white uppercase tracking-wider transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{
+                  background: 'linear-gradient(135deg, #836EFD 0%, #6C5CE7 50%, #836EFD 100%)',
+                  boxShadow: contest.name.trim() ? '0 6px 30px rgba(131,110,253,0.35)' : 'none',
+                }}
+              >
+                Inicializar Concurso →
+              </button>
+            </div>
+          </section>
         )}
 
-        {/* Main Content Area */}
-        <div className="space-y-12">
-          {/* Creation modal overlay */}
-          {isCreateOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
-              <div className="relative w-full max-w-lg rounded-3xl border border-[#836EFD]/30 bg-slate-900/90 p-6 md:p-8 space-y-6 shadow-2xl shadow-purple-500/10">
-                <button
-                  onClick={() => setIsCreateOpen(false)}
-                  className="absolute top-4 right-4 rounded-xl bg-slate-800 hover:bg-slate-700 p-2 text-slate-400 hover:text-white transition"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-
-                <div className="space-y-2">
-                  <h3 className="text-xl font-black text-white tracking-tight">Crear Nuevo Concurso</h3>
-                  <p className="text-xs text-slate-400">Registra una nueva sala de votación y competencia en la blockchain de Monad.</p>
-                </div>
-
-                <form onSubmit={handleCreateConcurso} className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-400 uppercase">Nombre del Concurso</label>
-                    <input
-                      type="text"
-                      placeholder="Ej. Hackathon Monad #1"
-                      value={concursoTitle}
-                      onChange={(e) => setConcursoTitle(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-400 uppercase">Descripción</label>
-                    <textarea
-                      placeholder="Describe las reglas, formato o premios..."
-                      value={concursoDescription}
-                      onChange={(e) => setConcursoDescription(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition resize-none h-24"
-                      required
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={createLoading}
-                    className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
-                  >
-                    {createLoading ? (
-                      <>
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        <span>Creando Concurso...</span>
-                      </>
-                    ) : (
-                      <span>Crear Concurso</span>
-                    )}
-                  </button>
-
-                  <p className="text-[10px] text-center text-[#836EFD] font-mono font-bold">
-                    Se generará un PIN único de 6 dígitos en la blockchain
-                  </p>
-                </form>
-
-                {createResult && (
-                  <div className={`p-3 rounded-xl text-xs border ${
-                    createResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                  }`}>
-                    {createResult.message}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Loading state after just creating a contest */}
-          {dashboardLoading && justCreatedPin !== null && (
-            <section className="rounded-3xl border border-[#836EFD]/30 bg-gradient-to-br from-slate-950 via-purple-950/20 to-slate-950 p-8 md:p-12 text-center space-y-6 animate-fadeIn">
-              <div className="w-20 h-20 rounded-full bg-[#836EFD]/10 flex items-center justify-center text-[#836EFD] mx-auto animate-pulse">
-                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black text-white tracking-tight">Preparando tu Sala de Competencia</h3>
-                <p className="text-sm text-slate-400 max-w-md mx-auto">Tu concurso fue creado exitosamente. Estamos cargando el panel de gestión...</p>
-              </div>
-              {justCreatedPin > 0n && (
-                <div className="inline-flex items-center gap-3 bg-slate-950/80 border border-[#836EFD]/30 rounded-2xl px-6 py-4">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tu PIN:</span>
-                  <span className="text-3xl font-black text-[#836EFD] font-mono tracking-[0.2em]">{justCreatedPin.toString().padStart(6, '0')}</span>
-                </div>
-              )}
-              <div className="flex justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-3 border-[#836EFD] border-t-transparent"></div>
-              </div>
-            </section>
-          )}
-
-          {/* State: Competition PIN does not exist */}
-          {!dashboardLoading && currentCompId > 0n && !doesCompExist && (
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-8 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400 mx-auto">
-                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-bold text-white uppercase font-mono tracking-widest">
-                El Concurso con PIN #{currentCompId.toString()} no existe
-              </h3>
-              <p className="text-sm text-slate-400 max-w-md mx-auto">
-                El código de concurso ingresado no corresponde a ninguna competencia registrada en la blockchain. Puedes ingresar otro PIN en la barra de búsqueda de arriba, o crear un nuevo concurso.
-              </p>
-              
-              {isConnected ? (
-                <div className="pt-4 max-w-lg mx-auto">
-                  <div className="bg-slate-950/60 p-6 rounded-2xl border border-slate-900 space-y-4 text-left">
-                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest font-mono">// CREAR NUEVO CONCURSO</h4>
-                    <form onSubmit={handleCreateConcurso} className="space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre del Concurso</label>
-                        <input
-                          type="text"
-                          placeholder="Ej. Mi Nuevo Concurso"
-                          value={concursoTitle}
-                          onChange={(e) => setConcursoTitle(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Descripción</label>
-                        <textarea
-                          placeholder="Escribe una descripción para este concurso..."
-                          value={concursoDescription}
-                          onChange={(e) => setConcursoDescription(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition resize-none h-16"
-                          required
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={createLoading}
-                        className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-2.5 px-4 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 shadow-lg shadow-[#836EFD]/25"
-                      >
-                        {createLoading ? 'Creando...' : 'Crear'}
-                      </button>
-                    </form>
-                    {createResult && (
-                      <p className="text-xs text-emerald-400 mt-2">{createResult.message}</p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="pt-4 text-xs text-slate-500">
-                  Conecta tu billetera arriba para poder crear una nueva competencia.
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Prominent PIN Banner when a contest was just created */}
-          {justCreatedPin !== null && doesCompExist && !dashboardLoading && (
-            <section className="rounded-3xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/30 via-slate-950 to-emerald-950/30 p-6 md:p-8 relative overflow-hidden animate-fadeIn">
-              <div className="absolute top-0 left-0 h-[2px] w-full bg-gradient-to-r from-transparent via-emerald-500/60 to-transparent" />
-              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+        {/* ════════════════════════════════════════
+            SCREEN B: MANAGE PARTICIPANTS
+           ════════════════════════════════════════ */}
+        {currentScreen === 'participants' && (
+          <section className="space-y-6 animate-in fade-in">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <div className="h-8 w-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(131,110,253,0.15)' }}>
+                    <svg className="w-4 h-4" style={{ color: '#836EFD' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-emerald-300">¡Sala Creada Exitosamente!</h4>
-                    <p className="text-xs text-slate-400">Comparte este PIN con los participantes para que se unan a la competencia.</p>
+                    <h2 className="text-xl font-black text-white tracking-tight">Participantes</h2>
+                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>
+                      {contest.name} • PIN: {pin} • {participants.length} registrados
+                    </p>
                   </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="bg-slate-950/80 border border-emerald-500/20 rounded-2xl px-5 py-3 flex items-center gap-3">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PIN:</span>
-                    <span className="text-2xl font-black text-emerald-400 font-mono tracking-[0.15em]">{justCreatedPin.toString().padStart(6, '0')}</span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(justCreatedPin.toString().padStart(6, '0'))
-                    }}
-                    className="rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-3 text-emerald-400 transition active:scale-95"
-                    title="Copiar PIN"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => setJustCreatedPin(null)}
-                    className="rounded-xl bg-slate-800/60 hover:bg-slate-700 border border-slate-700 px-3 py-3 text-slate-400 transition active:scale-95"
-                    title="Cerrar"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
                 </div>
               </div>
-            </section>
-          )}
 
-          {/* State: No competitions exist at all yet */}
-          {currentCompId === 0n && (
-            <section className="bg-slate-900/10 border border-slate-800 bg-slate-950/40 rounded-3xl p-6 md:p-8 space-y-6 relative overflow-hidden text-center">
-              <div className="absolute top-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
-              <h3 className="text-lg font-bold text-white uppercase font-mono tracking-widest">// DEBES CREAR EL PRIMER CONCURSO</h3>
-              <p className="text-sm text-slate-400 max-w-md mx-auto">
-                No se han registrado competencias en la plataforma. Conecta tu billetera y crea el primer concurso para comenzar.
-              </p>
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold transition-all active:scale-95"
+                style={{
+                  background: showAddForm ? 'rgba(239,68,68,0.1)' : '#836EFD',
+                  color: showAddForm ? '#f87171' : '#fff',
+                  border: showAddForm ? '1px solid rgba(239,68,68,0.3)' : 'none',
+                  boxShadow: showAddForm ? 'none' : '0 4px 20px rgba(131,110,253,0.3)',
+                }}
+              >
+                <svg className="w-4 h-4 transition-transform" style={{ transform: showAddForm ? 'rotate(45deg)' : 'none' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                {showAddForm ? 'Cancelar' : '+ Agregar Nuevo'}
+              </button>
+            </div>
 
-              {isConnected ? (
-                <form onSubmit={handleCreateConcurso} className="max-w-lg mx-auto bg-slate-950/60 p-6 rounded-2xl border border-slate-900 space-y-4 text-left">
+            {/* Add Form (collapsible) */}
+            <div className="overflow-hidden transition-all" style={{ maxHeight: showAddForm ? '500px' : '0', opacity: showAddForm ? 1 : 0, transitionDuration: '400ms' }}>
+              <div className="rounded-2xl p-5 space-y-4" style={{ background: 'rgba(131,110,253,0.05)', border: '1px solid rgba(131,110,253,0.2)' }}>
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider" style={{ color: '#836EFD', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                  Nuevo Participante
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-400 uppercase">Nombre del Concurso</label>
+                    <label className="text-[10px] font-bold uppercase" style={{ color: '#64748b' }}>Nombre del Proyecto</label>
                     <input
                       type="text"
-                      placeholder="Ej. Concurso de Proyectos #1"
-                      value={concursoTitle}
-                      onChange={(e) => setConcursoTitle(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition"
-                      required
+                      placeholder="Ej. Echoes of Silence"
+                      value={newProject}
+                      onChange={e => setNewProject(e.target.value)}
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none transition"
+                      style={{ background: '#0B0B0F', border: '1px solid rgba(51,51,68,0.6)' }}
+                      onFocus={e => e.target.style.borderColor = '#836EFD'}
+                      onBlur={e => e.target.style.borderColor = 'rgba(51,51,68,0.6)'}
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-400 uppercase">Descripción</label>
-                    <textarea
-                      placeholder="Escribe una descripción..."
-                      value={concursoDescription}
-                      onChange={(e) => setConcursoDescription(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition resize-none h-20"
-                      required
+                    <label className="text-[10px] font-bold uppercase" style={{ color: '#64748b' }}>Creador / Autor</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. DJ Monadist"
+                      value={newCreator}
+                      onChange={e => setNewCreator(e.target.value)}
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none transition"
+                      style={{ background: '#0B0B0F', border: '1px solid rgba(51,51,68,0.6)' }}
+                      onFocus={e => e.target.style.borderColor = '#836EFD'}
+                      onBlur={e => e.target.style.borderColor = 'rgba(51,51,68,0.6)'}
                     />
                   </div>
-                  <button
-                    type="submit"
-                    disabled={createLoading}
-                    className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
-                  >
-                    {createLoading ? 'Creando Concurso...' : 'Crear Concurso Principal'}
-                  </button>
-                  {createResult && (
-                    <p className="text-xs text-emerald-400 mt-2">{createResult.message}</p>
-                  )}
-                </form>
-              ) : (
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase" style={{ color: '#64748b' }}>URL Multimedia (YouTube, .mp3, .mp4, imagen…)</label>
+                  <input
+                    type="text"
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    value={newMediaUrl}
+                    onChange={e => setNewMediaUrl(e.target.value)}
+                    className="w-full rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none transition"
+                    style={{ background: '#0B0B0F', border: '1px solid rgba(51,51,68,0.6)' }}
+                    onFocus={e => e.target.style.borderColor = '#836EFD'}
+                    onBlur={e => e.target.style.borderColor = 'rgba(51,51,68,0.6)'}
+                  />
+                </div>
+
                 <button
-                  onClick={connectWallet}
-                  className="rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 px-6 text-xs font-black text-white transition duration-200"
+                  onClick={handleAddParticipant}
+                  disabled={!newProject.trim() || !newCreator.trim()}
+                  className="w-full rounded-xl py-2.5 text-xs font-black text-white transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  style={{ background: '#836EFD', boxShadow: '0 4px 16px rgba(131,110,253,0.25)' }}
                 >
-                  Conectar Billetera Mozi
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                  Agregar Participante
                 </button>
-              )}
-            </section>
-          )}
-          
-          {/* Dynamic Control Panel */}
-          {isConnected && doesCompExist && compDetails && (
-            <section className="bg-slate-900/10 border border-slate-800 bg-slate-950/40 rounded-3xl p-6 md:p-8 space-y-6 relative overflow-hidden">
-              <div className="absolute top-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
-              
-              <h3 className="text-md font-bold text-white uppercase font-mono tracking-wider flex items-center gap-2">
-                <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-                PANEL DE CONTROL DE TORNEO (PIN #{currentCompId.toString()})
-              </h3>
+              </div>
+            </div>
 
-              {/* State A: Competition exists but has ended */}
-              {compDetails.state === 2 && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-sm text-slate-300">
-                    ℹ️ Esta competencia ha finalizado. Puedes crear una nueva competencia si lo deseas (recibirá el siguiente PIN disponible).
-                  </div>
+            {/* Participant List */}
+            {participants.length > 0 ? (
+              <div className="space-y-2">
+                {participants.map((p, i) => (
+                  <div key={p.id} className="group flex items-center gap-3 rounded-2xl p-3 sm:p-4 transition-all" style={{ background: 'rgba(15,15,22,0.6)', border: '1px solid rgba(51,51,68,0.4)' }}>
+                    {/* Position */}
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(131,110,253,0.15)' }}>
+                      <span className="text-xs font-black" style={{ color: '#836EFD', fontFamily: 'var(--font-geist-mono, monospace)' }}>{i + 1}</span>
+                    </div>
 
-                  <form onSubmit={handleCreateConcurso} className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre del Concurso</label>
-                      <input
-                        type="text"
-                        placeholder="Ej. Concurso de Proyectos #2"
-                        value={concursoTitle}
-                        onChange={(e) => setConcursoTitle(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition"
-                        required
-                      />
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{p.projectName}</p>
+                      <p className="text-[11px] truncate" style={{ color: '#94a3b8' }}>
+                        <span style={{ color: '#64748b' }}>por</span> {p.creator}
+                        {p.mediaUrl && <span className="ml-2" style={{ color: '#475569' }}>• {classifyMedia(p.mediaUrl).toUpperCase()}</span>}
+                      </p>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Descripción</label>
-                      <textarea
-                        placeholder="Describe el nuevo concurso..."
-                        value={concursoDescription}
-                        onChange={(e) => setConcursoDescription(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition resize-none h-16"
-                        required
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={createLoading}
-                      className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3.5 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
-                    >
-                      {createLoading ? (
-                        <>
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                          <span>Creando Concurso...</span>
-                        </>
-                      ) : (
-                        <span>Crear Nuevo Concurso</span>
-                      )}
+
+                    {/* Media badge */}
+                    {(() => {
+                      const type = classifyMedia(p.mediaUrl)
+                      const colors: Record<string, { bg: string; border: string; text: string }> = {
+                        youtube: { bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.2)', text: '#f87171' },
+                        audio:   { bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.2)', text: '#fbbf24' },
+                        video:   { bg: 'rgba(6,182,212,0.1)', border: 'rgba(6,182,212,0.2)', text: '#22d3ee' },
+                        image:   { bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.2)', text: '#4ade80' },
+                        other:   { bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.2)', text: '#94a3b8' },
+                      }
+                      const c = colors[type] || colors.other
+                      return (
+                        <span className="hidden sm:inline-block text-[9px] font-bold uppercase px-2.5 py-1 rounded-lg" style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}>
+                          {type === 'youtube' ? 'YT' : type}
+                        </span>
+                      )
+                    })()}
+
+                    {/* Remove */}
+                    <button onClick={() => handleRemoveParticipant(p.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-red-400 flex-shrink-0">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
-                  </form>
-
-                  {createResult && (
-                    <div className={`p-3 rounded-xl text-xs border ${
-                      createResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                    }`}>
-                      {createResult.message}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* State B: Competition exists in Upcoming state */}
-              {compDetails.state === 0 && (
-                <div className="space-y-5">
-                  {/* Header: Participants count + Add button */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl bg-[#836EFD]/15 flex items-center justify-center">
-                          <svg className="w-4 h-4 text-[#836EFD]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-white uppercase tracking-wide font-mono">Participantes</h4>
-                          <p className="text-[10px] text-slate-500">{candidates?.length || 0} registrados</p>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddParticipant(!showAddParticipant)}
-                      className={`group flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all duration-300 active:scale-95 ${
-                        showAddParticipant 
-                          ? 'bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20' 
-                          : 'bg-[#836EFD] text-white hover:bg-[#836EFD]/90 shadow-lg shadow-[#836EFD]/25'
-                      }`}
-                    >
-                      <svg className={`w-4 h-4 transition-transform duration-300 ${showAddParticipant ? 'rotate-45' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
-                      {showAddParticipant ? 'Cancelar' : 'Agregar'}
-                    </button>
-                  </div>
-
-                  {/* Collapsible Add Participant Form */}
-                  <div className={`overflow-hidden transition-all duration-400 ease-in-out ${showAddParticipant ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                    <div className="rounded-2xl border border-[#836EFD]/20 bg-[#836EFD]/5 p-5 space-y-4">
-                      <div className="flex items-center gap-2 text-xs text-[#836EFD] font-bold uppercase tracking-wide font-mono">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                        </svg>
-                        Nuevo Participante
-                      </div>
-
-                      <form onSubmit={handlePostulateContent} className="space-y-3">
-                        {/* Row 1: Wallet + Project Name */}
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Wallet del Competidor</label>
-                            <input
-                              type="text"
-                              placeholder="0x..."
-                              value={candidateWallet}
-                              onChange={(e) => setCandidateWallet(e.target.value)}
-                              disabled={address?.toLowerCase() !== compDetails.host.toLowerCase()}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition disabled:opacity-60 disabled:cursor-not-allowed font-mono"
-                              required
-                            />
-                            <p className="text-[9px] text-slate-500">
-                              {address?.toLowerCase() === compDetails.host.toLowerCase()
-                                ? "✓ Host: puedes agregar cualquier wallet."
-                                : "🔒 Solo puedes postular tu propia wallet."}
-                            </p>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre del Proyecto</label>
-                            <input
-                              type="text"
-                              placeholder="Ej. Parallel Soundscapes"
-                              value={projectName}
-                              onChange={(e) => setProjectName(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                              required
-                            />
-                          </div>
-                        </div>
-
-                        {/* Row 2: Creator + Media Type */}
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Creador / Autor</label>
-                            <input
-                              type="text"
-                              placeholder="Ej. DJ Monadist"
-                              value={creatorName}
-                              onChange={(e) => setCreatorName(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                              required
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Tipo de Multimedia</label>
-                            <select
-                              value={mediaType}
-                              onChange={(e) => setMediaType(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                            >
-                              <option value="youtube">YouTube</option>
-                              <option value="audio">Audio (.mp3, .wav)</option>
-                              <option value="video">Video (.mp4, .webm)</option>
-                              <option value="image">Imagen (.png, .jpg, .gif)</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* Row 3: Media URL */}
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">URL de Contenido</label>
-                          <input
-                            type="url"
-                            placeholder="https://www.youtube.com/watch?v=..."
-                            value={mediaUrl}
-                            onChange={(e) => setMediaUrl(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                            required
-                          />
-                        </div>
-
-                        <button
-                          type="submit"
-                          disabled={postulateLoading}
-                          className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-2.5 text-xs font-black text-white transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/20"
-                        >
-                          {postulateLoading ? (
-                            <>
-                              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                              <span>Registrando...</span>
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                              </svg>
-                              <span>Agregar Participante</span>
-                            </>
-                          )}
-                        </button>
-                      </form>
-
-                      {postulateResult && (
-                        <div className={`p-2.5 rounded-xl text-[11px] border ${
-                          postulateResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                        }`}>
-                          {postulateResult.message}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Host Controls: Start Voting — compact bottom bar */}
-                  <div className="rounded-2xl border border-slate-800/60 bg-slate-950/50 p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                      <div className="flex-1 space-y-1">
-                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide font-mono flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Iniciar Votación
-                        </h4>
-                        <p className="text-[10px] text-slate-500">
-                          {address?.toLowerCase() === compDetails.host.toLowerCase()
-                            ? `Requiere mín. 2 participantes (actual: ${candidates?.length || 0})`
-                            : '🔒 Solo el host puede iniciar la votación.'}
-                        </p>
-                      </div>
-                      {address?.toLowerCase() === compDetails.host.toLowerCase() ? (
-                        <form onSubmit={handleStartVoting} className="flex items-center gap-3 flex-shrink-0">
-                          <div className="flex items-center gap-1.5">
-                            <label className="text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">Duración (min)</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={votingDuration}
-                              onChange={(e) => setVotingDuration(e.target.value)}
-                              className="w-16 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition text-center"
-                              required
-                            />
-                          </div>
-                          <button
-                            type="submit"
-                            disabled={startVotingLoading || (candidates?.length || 0) < 2}
-                            className="rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 px-5 py-2 text-xs font-black text-white transition active:scale-95 disabled:opacity-30 flex items-center gap-2 whitespace-nowrap"
-                          >
-                            {startVotingLoading ? (
-                              <>
-                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                <span>Iniciando...</span>
-                              </>
-                            ) : (
-                              <span>▶ Iniciar</span>
-                            )}
-                          </button>
-                        </form>
-                      ) : null}
-                    </div>
-                    {startVotingResult && (
-                      <div className={`mt-3 p-2.5 rounded-xl text-[11px] border ${
-                        startVotingResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                      }`}>
-                        {startVotingResult.message}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* State C: Active competition */}
-              {compDetails.state === 1 && (
-                <div className="p-4 rounded-2xl bg-cyan-500/5 border border-cyan-500/25 text-sm text-cyan-300">
-                  ⚡ La votación está en curso para el concurso **"{compDetails.title}"**. Revisa los competidores a continuación y emite tu voto predictor.
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Active Competition Header with Countdown Timer and Total Pool */}
-          {doesCompExist && compDetails && (
-            <section className="flex flex-col md:flex-row items-center justify-between gap-8 bg-slate-900/10 border border-slate-800/40 rounded-3xl p-6 md:p-8 relative overflow-hidden">
-              <div className="absolute top-0 right-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
-              
-              <div className="space-y-3 text-center md:text-left">
-                <div>
-                  <h2 className="text-2xl md:text-3xl font-extrabold text-white">
-                    Concurso #{compDetails.id.toString()}: {compDetails.title}
-                  </h2>
-                  <p className="text-[10px] text-[#836EFD] font-mono mt-0.5">
-                    Organizado por: <span className="font-bold">{compDetails.host.slice(0, 6)}...{compDetails.host.slice(-4)}</span>
-                  </p>
-                </div>
-                
-                {compDetails.description && (
-                  <div className="text-xs text-slate-300 bg-slate-950/40 border border-slate-800/60 rounded-xl p-3 leading-relaxed max-w-xl text-left">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 font-mono block mb-1">Descripción del Torneo</span>
-                    {compDetails.description}
-                  </div>
-                )}
-
-                <p className="text-xs text-slate-400 max-w-lg leading-relaxed">
-                  {compDetails.state === 0 
-                    ? "Fase de postulación y registro. Agrega proyectos al concurso arriba."
-                    : compDetails.state === 1
-                      ? "Fase de votación activa. ¡Vota por tu favorito para depositar la tarifa de entrada de 0.1 MONAD y ganar tu parte del pozo!"
-                      : "La competencia ha finalizado. Ve el podio revelado y reclama tus ganancias a continuación."}
-                </p>
-              </div>
-
-              {/* Countdown timer & Total Pool wrapper */}
-              <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 flex-shrink-0">
-                {/* Localized finalization date */}
-                <div className="text-center sm:text-right space-y-1">
-                  <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Finalización</p>
-                  <p className="text-xs font-mono text-slate-300 font-bold whitespace-nowrap">
-                    {compDetails.endTime > 0n 
-                      ? new Date(Number(compDetails.endTime) * 1000).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
-                      : 'Pendiente de inicio'}
-                  </p>
-                </div>
-
-                {/* Highlighted Total Pool display */}
-                <div className="text-center sm:text-left sm:border-l sm:border-r border-slate-800 sm:px-8 space-y-1">
-                  <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Pozo Total</p>
-                  <p className="text-xl sm:text-2xl font-black text-[#836EFD] font-mono leading-none tracking-tight">
-                    {totalPoolNumber.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD
-                  </p>
-                </div>
-
-                {/* Ticking millisecond timer */}
-                <div className="flex-shrink-0">
-                  <CountdownTimer endTime={customEndTime} />
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* Grid Panel: Participating Projects — Dual Mode */}
-          {doesCompExist && (
-            <section className="space-y-6">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
-                <h3 className="text-lg font-bold text-white tracking-wide uppercase font-mono text-sm sm:text-base">
-                  // Proyectos Competidores
-                </h3>
-                {voteResult && (
-                  <div className={`text-xs px-3 py-1 rounded border ${
-                    voteResult.success 
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                  }`}>
-                    {voteResult.message}
-                  </div>
-                )}
-              </div>
-
-              {projects.length > 0 ? (
-                <>
-                  {/* State 0 (Upcoming): Draggable compact list */}
-                  {compDetails && compDetails.state === 0 ? (
-                    <div className="space-y-2">
-                      {(projectOrder.length === projects.length ? projectOrder : projects.map((_: unknown, i: number) => i)).map((realIdx: number, visualPos: number) => {
-                        const project = projects[realIdx]
-                        if (!project) return null
-                        return (
-                          <div
-                            key={realIdx}
-                            draggable
-                            onDragStart={() => setDragIdx(visualPos)}
-                            onDragOver={(e) => { e.preventDefault(); setDragOverIdx(visualPos) }}
-                            onDragEnd={() => {
-                              if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
-                                setProjectOrder(prev => {
-                                  const updated = [...prev]
-                                  const [moved] = updated.splice(dragIdx, 1)
-                                  updated.splice(dragOverIdx, 0, moved)
-                                  return updated
-                                })
-                              }
-                              setDragIdx(null)
-                              setDragOverIdx(null)
-                            }}
-                            onDragLeave={() => setDragOverIdx(null)}
-                            className={`group flex items-center gap-3 rounded-2xl border p-3 sm:p-4 transition-all duration-200 cursor-grab active:cursor-grabbing ${
-                              dragOverIdx === visualPos 
-                                ? 'border-[#836EFD]/60 bg-[#836EFD]/10 scale-[1.01]' 
-                                : dragIdx === visualPos
-                                  ? 'opacity-40 border-slate-800 bg-slate-950/40'
-                                  : 'border-slate-800/60 bg-slate-950/30 hover:border-slate-700 hover:bg-slate-900/40'
-                            }`}
-                          >
-                            {/* Drag grip handle */}
-                            <div className="flex flex-col gap-[3px] opacity-30 group-hover:opacity-60 transition flex-shrink-0">
-                              <div className="flex gap-[3px]">
-                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
-                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
-                              </div>
-                              <div className="flex gap-[3px]">
-                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
-                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
-                              </div>
-                              <div className="flex gap-[3px]">
-                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
-                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
-                              </div>
-                            </div>
-
-                            {/* Position number */}
-                            <div className="w-7 h-7 rounded-lg bg-[#836EFD]/15 flex items-center justify-center flex-shrink-0">
-                              <span className="text-xs font-black text-[#836EFD] font-mono">{visualPos + 1}</span>
-                            </div>
-
-                            {/* Project info */}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold text-white truncate">{project.title}</p>
-                              <p className="text-[11px] text-slate-400 truncate">
-                                <span className="text-slate-500">por</span> {project.author}
-                                {project.candidateAddress && (
-                                  <span className="text-slate-600 ml-2 font-mono">
-                                    {project.candidateAddress.slice(0, 6)}...{project.candidateAddress.slice(-4)}
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-
-                            {/* Media type badge */}
-                            <div className="flex-shrink-0 hidden sm:flex items-center gap-1.5">
-                              {project.src?.includes('youtube') || project.src?.includes('youtu.be') ? (
-                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">YT</span>
-                              ) : project.src?.match(/\.(mp3|wav|ogg|flac)/) ? (
-                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">Audio</span>
-                              ) : project.src?.match(/\.(mp4|webm|mov)/) ? (
-                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">Video</span>
-                              ) : project.src?.match(/\.(png|jpg|jpeg|gif|webp|svg)/) ? (
-                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">Img</span>
-                              ) : (
-                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-slate-500/10 border border-slate-500/20 text-slate-400">Link</span>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    /* State 1 & 2: Standard MediaCard grid */
-                    <div className="grid gap-6 md:grid-cols-3">
-                      {projects.map((project, i) => (
-                        <MediaCard
-                          key={i}
-                          title={project.title}
-                          author={project.author}
-                          description={project.description}
-                          src={project.src}
-                          candidateAddress={project.candidateAddress}
-                          onVote={handleVote}
-                          isVoting={isVoting}
-                          isConnected={isConnected}
-                          isWrongNetwork={isWrongNetwork}
-                          odds={project.odds}
-                          highlightOdds={project.highlightOdds}
-                          status={getCompStatus()}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="rounded-3xl border border-slate-900 bg-slate-950/40 p-12 text-center text-slate-500">
-                  <svg className="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V4a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                  </svg>
-                  <p className="text-sm font-semibold">Aún no hay participantes registrados.</p>
-                  {compDetails && compDetails.state === 0 && (
-                    <p className="text-xs text-slate-600 mt-1">¡Usa el botón &quot;+ Agregar&quot; de arriba para registrar el primer participante!</p>
-                  )}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* OpenPod.io Reveal Section: Locked blind vote podiums */}
-          {doesCompExist && compDetails && (
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-6 md:p-8 space-y-6 relative overflow-hidden">
-              <div className="absolute bottom-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
-
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800/40">
-                <div className="text-center md:text-left space-y-1.5">
-                  <h3 className="text-md font-bold text-white uppercase font-mono tracking-wider flex items-center gap-2 justify-center md:justify-start">
-                    {compDetails.state !== 2 ? (
-                      <svg className="w-4 h-4 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4 text-emerald-400 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                      </svg>
-                    )}
-                    HUD de Revelación de OpenPod.io
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    {compDetails.state !== 2 
-                      ? "Podio protegido por Voto Ciego. Se calculará on-chain al finalizar la cuenta regresiva." 
-                      : "Concurso finalizado. Revelando los resultados de los ganadores on-chain."}
-                  </p>
-                </div>
-
-                {/* Status Alert feedback */}
-                {(resolveResult || claimResult) && (
-                  <div className={`text-xs px-3 py-1.5 rounded border ${
-                    (resolveResult?.success || claimResult?.success)
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                  }`}>
-                    {resolveResult?.message || claimResult?.message}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-3">
-                {[
-                  {
-                    rank: '1° Puesto (Ganador)',
-                    locked: `[ ? ] RECOMPENSA ESTIMADA: ${(totalPoolNumber * 0.8).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD (80% para el Creador)`,
-                    revealed: compDetails?.resolved
-                      ? `🏆 GANADOR: ${getWinnerName()} (${(totalPoolNumber * 0.8).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD)`
-                      : `⌛ ESPERANDO RESOLUCIÓN... (Recompensa: ${(totalPoolNumber * 0.8).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD)`,
-                    subtext: 'Premio directo al Creador del Proyecto'
-                  },
-                  {
-                    rank: '2° Puesto',
-                    locked: `DISTRIBUCIÓN DEL POZO: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD (20% para Votantes Ganadores)`,
-                    revealed: compDetails?.resolved
-                      ? `🔥 REPARTO DEL POZO: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD entre votantes`
-                      : `⌛ ESPERANDO RESOLUCIÓN... (Pozo Votantes: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD)`,
-                    subtext: 'Reclamable por votantes que acertaron la predicción'
-                  },
-                  {
-                    rank: '3° Puesto',
-                    locked: `DISTRIBUCIÓN DEL POZO: ${(totalPoolNumber * 0.2).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD (20% para Votantes Ganadores)`,
-                    revealed: compDetails?.resolved
-                      ? `✨ POZO RECLAMABLE: Reparto de recompensas Web3`
-                      : `⌛ ESPERANDO RESOLUCIÓN...`,
-                    subtext: 'Distribución del pozo de predicciones'
-                  }
-                ].map((pod, i) => (
-                  <div 
-                    key={i} 
-                    className="rounded-2xl bg-slate-950/60 border border-slate-900 p-5 flex items-center justify-between group relative overflow-hidden h-[105px]"
-                  >
-                    <div className="space-y-1 z-10 w-[75%]">
-                      <p className="text-xs font-mono font-bold text-slate-500 uppercase">{pod.rank}</p>
-                      <div className="relative h-10 w-full">
-                        <div className={`absolute inset-0 transition-all duration-700 flex items-center ${compDetails.state === 2 ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}>
-                          <p className="text-xs sm:text-sm font-extrabold text-slate-300 tracking-tight leading-snug">
-                            {pod.locked}
-                          </p>
-                        </div>
-                        <div className={`absolute inset-0 transition-all duration-700 flex items-center ${compDetails.state === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
-                          <p className="text-xs sm:text-sm font-extrabold text-emerald-400 tracking-tight leading-snug">
-                            {pod.revealed}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-[9px] text-slate-500 font-mono mt-0.5">{pod.subtext}</p>
-                    </div>
-                    
-                    {/* Lock icon */}
-                    <div className="relative h-10 w-10 shrink-0 rounded-full bg-slate-900 border border-slate-800/80 flex items-center justify-center z-10 ml-3 transition-all duration-500">
-                      {compDetails.state !== 2 ? (
-                        <>
-                          <span className="absolute inset-0 rounded-full bg-[#836EFD]/25 animate-ping" />
-                          <svg className="w-4 h-4 text-[#836EFD] relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                          </svg>
-                        </>
-                      ) : (
-                        <>
-                          <span className="absolute inset-0 rounded-full bg-emerald-500/20 animate-pulse" />
-                          <svg className="w-4 h-4 text-emerald-400 relative z-10 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                          </svg>
-                        </>
-                      )}
-                    </div>
-                    
-                    {/* Subtle hover effect background */}
-                    <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none" />
                   </div>
                 ))}
               </div>
+            ) : (
+              <div className="rounded-3xl p-12 text-center" style={{ border: '1px solid rgba(51,51,68,0.3)', background: 'rgba(15,15,22,0.4)' }}>
+                <svg className="w-12 h-12 mx-auto mb-3" style={{ color: '#334155' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V4a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+                <p className="text-sm font-semibold" style={{ color: '#64748b' }}>Aún no hay participantes.</p>
+                <p className="text-xs mt-1" style={{ color: '#475569' }}>Usa el botón &quot;+ Agregar Nuevo&quot; de arriba.</p>
+              </div>
+            )}
 
-              {/* Resolve and Claim Actions Panel */}
-              {compDetails.state === 2 && isConnected && (
-                <div className="mt-6 pt-6 border-t border-slate-800/40 flex flex-col items-center justify-between gap-4 sm:flex-row bg-slate-950/40 p-5 rounded-2xl border border-slate-900/60 animate-fadeIn">
-                  <div className="text-center sm:text-left space-y-1">
-                    <h4 className="text-sm font-bold text-white flex items-center gap-1.5 justify-center sm:justify-start">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-                      Panel de Recompensas de OpenPod.io
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      {!compDetails?.resolved
-                        ? "La votación ha terminado. Ejecuta la resolución on-chain para calcular el ganador y distribuir el pozo."
-                        : voterSelection?.toLowerCase() === compDetails.winner.toLowerCase()
-                          ? (hasClaimed 
-                              ? "¡Felicidades! Has reclamado con éxito tu porción del pozo del 20%."
-                              : "¡Felicidades! Tu predicción fue correcta. Reclama tu porción del pozo ahora.")
-                          : "El concurso ha sido resuelto. Esta vez tu predicción no resultó ganadora."}
-                    </p>
-                  </div>
+            {/* Launch Button */}
+            <button
+              onClick={handleLaunchCompetition}
+              disabled={participants.length < 2}
+              className="w-full rounded-2xl py-4 text-sm font-black text-white uppercase tracking-wider transition-all active:scale-[0.98] disabled:opacity-20 disabled:cursor-not-allowed"
+              style={{
+                background: participants.length >= 2 ? 'linear-gradient(135deg, #836EFD 0%, #00F0FF 100%)' : 'rgba(51,51,68,0.3)',
+                boxShadow: participants.length >= 2 ? '0 8px 40px rgba(131,110,253,0.3)' : 'none',
+              }}
+            >
+              {participants.length < 2
+                ? `Necesitas al menos 2 participantes (${participants.length}/2)`
+                : `🚀 Lanzar Competencia (${participants.length} participantes)`}
+            </button>
+          </section>
+        )}
 
-                  <div className="w-full sm:w-auto flex flex-col gap-3">
-                    {/* Resolve Button */}
-                    {!compDetails?.resolved && (
-                      <button
-                        onClick={handleResolve}
-                        disabled={isResolving}
-                        className="rounded-xl bg-gradient-to-r from-[#836EFD] to-indigo-600 hover:from-[#836EFD]/95 hover:to-indigo-600/95 py-2.5 px-5 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
-                      >
-                        {isResolving ? (
-                          <>
-                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            <span>Resolviendo en Monad...</span>
-                          </>
-                        ) : (
-                          <span>Resolver Concurso On-Chain</span>
-                        )}
-                      </button>
-                    )}
+        {/* ════════════════════════════════════════
+            SCREEN C: LIVE SHOWCASE & VOTING
+           ════════════════════════════════════════ */}
+        {currentScreen === 'showcase' && (
+          <section className="space-y-8 animate-in fade-in">
 
-                    {/* Claim Rewards Button */}
-                    {compDetails?.resolved && voterSelection?.toLowerCase() === compDetails.winner.toLowerCase() && !hasClaimed && (
-                      <button
-                        onClick={handleClaimRewards}
-                        disabled={isClaiming}
-                        className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 py-2.5 px-5 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
-                      >
-                        {isClaiming ? (
-                          <>
-                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            <span>Reclamando Ganancias...</span>
-                          </>
-                        ) : (
-                          <span>Reclamar Mis Ganancias (20% Pool Share)</span>
-                        )}
-                      </button>
-                    )}
+            {/* ── Countdown Banner ── */}
+            <div className="relative rounded-3xl overflow-hidden p-6 sm:p-8" style={{ background: 'linear-gradient(135deg, rgba(131,110,253,0.08) 0%, rgba(0,240,255,0.04) 100%)', border: '1px solid rgba(131,110,253,0.2)' }}>
+              <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, #836EFD 0%, transparent 60%), radial-gradient(circle at 80% 50%, #00F0FF 0%, transparent 60%)' }} />
+              <div className="relative flex flex-col sm:flex-row items-center justify-between gap-6">
+                {/* Contest Info */}
+                <div className="text-center sm:text-left space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>
+                    {competitionEnded ? '🏁 COMPETENCIA FINALIZADA' : '🔴 EN VIVO'}
+                  </p>
+                  <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">{contest.name}</h2>
+                  <p className="text-xs" style={{ color: '#94a3b8' }}>PIN: <span style={{ color: '#836EFD' }}>{pin}</span> • {participants.length} competidores</p>
+                </div>
 
-                    {/* Already Claimed State */}
-                    {compDetails?.resolved && voterSelection?.toLowerCase() === compDetails.winner.toLowerCase() && hasClaimed && (
-                      <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold flex items-center gap-1.5 justify-center">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Recompensa Reclamada
-                      </div>
-                    )}
+                {/* Timer */}
+                <div className="text-center flex-shrink-0">
+                  {!competitionEnded && (
+                    <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color: '#64748b' }}>Tiempo Restante</p>
+                  )}
+                  <div className="flex items-baseline gap-1" style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                    <span className="text-4xl sm:text-5xl font-black" style={{ color: competitionEnded ? '#22c55e' : '#fff' }}>
+                      {competitionEnded ? '00' : String(timeLeft.m).padStart(2, '0')}
+                    </span>
+                    <span className="text-2xl font-black" style={{ color: '#836EFD' }}>:</span>
+                    <span className="text-4xl sm:text-5xl font-black" style={{ color: competitionEnded ? '#22c55e' : '#fff' }}>
+                      {competitionEnded ? '00' : String(timeLeft.s).padStart(2, '0')}
+                    </span>
+                    <span className="text-2xl font-black" style={{ color: '#836EFD' }}>.</span>
+                    <span className="text-2xl font-black" style={{ color: competitionEnded ? '#4ade80' : '#94a3b8' }}>
+                      {competitionEnded ? '00' : String(timeLeft.ms).padStart(2, '0')}
+                    </span>
                   </div>
                 </div>
-              )}
-            </section>
-          )}
 
-          {/* Faucet Support Area */}
-          {isConnected && !isWrongNetwork && (
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/30 p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
-              <div className="space-y-1">
-                <h4 className="text-md font-bold text-white flex items-center gap-2">
-                  <svg className="w-4 h-4 text-[#836EFD]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 00-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                  </svg>
-                  Portal Faucet de Monad Testnet
-                </h4>
-                <p className="text-xs text-slate-400 max-w-xl">
-                  ¿Necesitas tokens MONAD de prueba para votar o probar la velocidad de las transacciones? Solicita fondos de inmediato a través del portal de faucet.
+                {/* Pool + Simulate */}
+                <div className="text-center sm:text-right space-y-2 flex-shrink-0">
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>Total Pool</p>
+                    <p className="text-xl sm:text-2xl font-black tracking-tight" style={{ color: '#836EFD', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                      {totalPool.toFixed(1)} MONAD
+                    </p>
+                  </div>
+                  {!competitionEnded && (
+                    <button
+                      onClick={handleSimulateEnd}
+                      className="text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded-lg transition-all hover:opacity-80"
+                      style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                    >
+                      ⚡ Simular Cierre
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Competitor Cards Grid ── */}
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider mb-4" style={{ color: '#94a3b8', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                // Proyectos en Competencia
+              </h3>
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {participants.map((p) => {
+                  const media = classifyMedia(p.mediaUrl)
+                  const ytId = media === 'youtube' ? extractYouTubeId(p.mediaUrl) : null
+                  const odds = totalVotes > 0 ? ((totalPool * 0.8) / (p.votes * 0.1 || 0.1)).toFixed(1) : '—'
+                  const isWinner = competitionEnded && showReveal && sortedByVotes[0]?.id === p.id
+                  const isVotingThis = votingFor === p.id
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="rounded-2xl overflow-hidden transition-all duration-500"
+                      style={{
+                        background: 'rgba(15,15,22,0.9)',
+                        border: `1px solid ${isWinner ? '#22c55e' : competitionEnded ? 'rgba(51,51,68,0.3)' : 'rgba(51,51,68,0.5)'}`,
+                        boxShadow: isWinner ? '0 0 40px rgba(34,197,94,0.2)' : 'none',
+                        opacity: competitionEnded && !showReveal ? 0.5 : 1,
+                        transform: isWinner ? 'scale(1.02)' : 'none',
+                      }}
+                    >
+                      {/* Media Area */}
+                      <div className="relative aspect-video w-full overflow-hidden" style={{ background: '#0B0B0F' }}>
+                        {media === 'youtube' && ytId ? (
+                          <iframe
+                            src={`https://www.youtube.com/embed/${ytId}?rel=0`}
+                            className="absolute inset-0 w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            title={p.projectName}
+                          />
+                        ) : media === 'video' ? (
+                          <video src={p.mediaUrl} controls className="absolute inset-0 w-full h-full object-cover" />
+                        ) : media === 'audio' ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 space-y-3">
+                            <div className="flex items-center gap-1">
+                              {[...Array(24)].map((_, i) => (
+                                <div key={i} className="w-[3px] rounded-full animate-pulse" style={{
+                                  background: `linear-gradient(to top, #836EFD, #00F0FF)`,
+                                  height: `${12 + Math.random() * 28}px`,
+                                  animationDelay: `${i * 80}ms`,
+                                  animationDuration: `${600 + Math.random() * 600}ms`,
+                                }} />
+                              ))}
+                            </div>
+                            <audio src={p.mediaUrl} controls className="w-full max-w-[200px]" style={{ filter: 'invert(1) hue-rotate(180deg)', opacity: 0.7 }} />
+                          </div>
+                        ) : media === 'image' ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={p.mediaUrl} alt={p.projectName} className="absolute inset-0 w-full h-full object-cover" />
+                        ) : (
+                          /* Cyberpunk placeholder */
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <div className="relative">
+                              <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(131,110,253,0.1)', border: '1px solid rgba(131,110,253,0.3)' }}>
+                                <svg className="w-7 h-7" style={{ color: '#836EFD' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                                </svg>
+                              </div>
+                              <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full animate-pulse" style={{ background: '#836EFD', boxShadow: '0 0 10px #836EFD' }} />
+                            </div>
+                            <p className="text-[10px] mt-2 font-bold uppercase tracking-widest" style={{ color: '#475569' }}>Contenido Multimedia</p>
+                          </div>
+                        )}
+
+                        {/* Winner badge overlay */}
+                        {isWinner && (
+                          <div className="absolute top-2 right-2 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider animate-bounce" style={{ background: '#22c55e', color: '#0B0B0F' }}>
+                            🏆 Ganador
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card Body */}
+                      <div className="p-4 space-y-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-white truncate">{p.projectName}</h4>
+                          <p className="text-[11px] truncate" style={{ color: '#94a3b8' }}>
+                            <span style={{ color: '#64748b' }}>por</span> {p.creator}
+                          </p>
+                        </div>
+
+                        {/* Stats row */}
+                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>
+                          <span>{p.votes} voto{p.votes !== 1 ? 's' : ''}</span>
+                          <span style={{ color: '#836EFD' }}>x{odds}</span>
+                          <span>{(p.votes * 0.1).toFixed(1)} MON</span>
+                        </div>
+
+                        {/* Vote button */}
+                        {!competitionEnded ? (
+                          <button
+                            onClick={() => handleVote(p.id)}
+                            disabled={hasVoted || !!votingFor}
+                            className="w-full rounded-xl py-2.5 text-xs font-black transition-all active:scale-95 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            style={{
+                              background: hasVoted
+                                ? 'rgba(34,197,94,0.1)'
+                                : isVotingThis
+                                  ? 'rgba(131,110,253,0.3)'
+                                  : '#836EFD',
+                              color: hasVoted ? '#4ade80' : '#fff',
+                              border: hasVoted ? '1px solid rgba(34,197,94,0.3)' : 'none',
+                              boxShadow: !hasVoted && !votingFor ? '0 4px 16px rgba(131,110,253,0.25)' : 'none',
+                              opacity: hasVoted ? 0.8 : votingFor && !isVotingThis ? 0.4 : 1,
+                            }}
+                          >
+                            {isVotingThis ? (
+                              <>
+                                <div className="h-3 w-3 animate-spin rounded-full" style={{ border: '2px solid #fff', borderTopColor: 'transparent' }} />
+                                <span>Conectando Mozi…</span>
+                              </>
+                            ) : hasVoted ? (
+                              <span>✓ Voto Registrado</span>
+                            ) : (
+                              <span>Predict &amp; Vote (0.1 MONAD)</span>
+                            )}
+                          </button>
+                        ) : (
+                          <div className="w-full rounded-xl py-2.5 text-xs font-bold text-center" style={{ background: 'rgba(51,51,68,0.2)', color: '#64748b', border: '1px solid rgba(51,51,68,0.3)' }}>
+                            Votación Cerrada
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* ── PODIO REVEAL HUD ── */}
+            <div className="rounded-3xl overflow-hidden relative" style={{ background: 'rgba(15,15,22,0.6)', border: '1px solid rgba(51,51,68,0.4)' }}>
+              <div className="absolute bottom-0 left-0 h-[1px] w-[30%]" style={{ background: 'linear-gradient(to right, transparent, rgba(131,110,253,0.4), transparent)' }} />
+
+              {/* Header */}
+              <div className="p-5 sm:p-6 border-b" style={{ borderColor: 'rgba(51,51,68,0.3)' }}>
+                <div className="flex items-center gap-2">
+                  {!competitionEnded ? (
+                    <svg className="w-4 h-4 animate-spin" style={{ color: '#00F0FF' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                  ) : (
+                    <svg className="w-4 h-4 animate-bounce" style={{ color: '#22c55e' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                  )}
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider" style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                    OpenPodio Reveal HUD
+                  </h3>
+                </div>
+                <p className="text-xs mt-1" style={{ color: '#64748b' }}>
+                  {!competitionEnded
+                    ? 'Podio protegido por Voto Ciego. Se revelará al finalizar la cuenta regresiva.'
+                    : 'Competencia finalizada. Resultados revelados on-chain.'}
                 </p>
               </div>
 
-              <div className="w-full md:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <div className="text-center sm:text-right pr-4 border-slate-800 sm:border-r">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tu Saldo</p>
-                  <p className="text-md font-bold text-slate-200 font-mono">
-                    {balanceData ? `${Number(formatUnits(balanceData.value, balanceData.decimals)).toFixed(4)} ${balanceData.symbol}` : 'Cargando...'}
-                  </p>
-                </div>
+              {/* Podium Cards */}
+              <div className="grid gap-4 sm:grid-cols-3 p-5 sm:p-6">
+                {[
+                  { rank: '1° Puesto', emoji: '🏆', poolPct: 0.8, label: 'Ganador — 80% del Pozo' },
+                  { rank: '2° Puesto', emoji: '🥈', poolPct: 0.12, label: '12% Pozo Votantes' },
+                  { rank: '3° Puesto', emoji: '🥉', poolPct: 0.08, label: '8% Pozo Votantes' },
+                ].map((pod, i) => {
+                  const winner = sortedByVotes[i]
+                  const reward = (totalPool * pod.poolPct).toFixed(1)
+                  return (
+                    <div
+                      key={i}
+                      className="rounded-2xl p-4 sm:p-5 transition-all duration-700 relative overflow-hidden"
+                      style={{
+                        background: showReveal && winner
+                          ? i === 0
+                            ? 'rgba(34,197,94,0.08)'
+                            : 'rgba(131,110,253,0.05)'
+                          : 'rgba(15,15,22,0.8)',
+                        border: `1px solid ${showReveal && winner && i === 0 ? 'rgba(34,197,94,0.3)' : 'rgba(51,51,68,0.4)'}`,
+                      }}
+                    >
+                      <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                        {pod.rank}
+                      </p>
 
-                <button
-                  onClick={handleRequestFaucet}
-                  disabled={faucetLoading}
-                  className="rounded-xl bg-[#836EFD]/10 border border-[#836EFD]/30 hover:bg-[#836EFD]/20 px-5 py-3 text-xs font-bold text-[#836EFD] transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
-                >
-                  {faucetLoading ? (
-                    <>
-                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-[#836EFD] border-t-transparent" />
-                      <span>Solicitando 1 MONAD...</span>
-                    </>
-                  ) : (
-                    <span>Solicitar 1 MONAD</span>
-                  )}
-                </button>
+                      {/* Locked / Revealed states */}
+                      <div className="relative h-12">
+                        {/* Locked */}
+                        <div className="absolute inset-0 flex flex-col justify-center transition-all duration-700" style={{ opacity: showReveal ? 0 : 1, transform: showReveal ? 'scale(0.9)' : 'scale(1)' }}>
+                          <p className="text-xs font-bold text-slate-300 leading-snug">
+                            [ ? ] RECOMPENSA: {reward} MONAD
+                          </p>
+                        </div>
+                        {/* Revealed */}
+                        <div className="absolute inset-0 flex flex-col justify-center transition-all duration-700" style={{ opacity: showReveal ? 1 : 0, transform: showReveal ? 'scale(1)' : 'scale(1.1)' }}>
+                          {winner ? (
+                            <p className="text-xs font-extrabold leading-snug" style={{ color: i === 0 ? '#4ade80' : '#836EFD' }}>
+                              {pod.emoji} {winner.projectName} ({reward} MONAD)
+                            </p>
+                          ) : (
+                            <p className="text-xs font-bold" style={{ color: '#64748b' }}>Sin participante</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-[9px] mt-1" style={{ color: '#475569', fontFamily: 'var(--font-geist-mono, monospace)' }}>{pod.label}</p>
+
+                      {/* Lock/Unlock icon */}
+                      <div className="absolute top-4 right-4 h-8 w-8 rounded-full flex items-center justify-center" style={{ background: showReveal ? 'rgba(34,197,94,0.15)' : 'rgba(131,110,253,0.1)', border: `1px solid ${showReveal ? 'rgba(34,197,94,0.3)' : 'rgba(131,110,253,0.2)'}` }}>
+                        {!showReveal ? (
+                          <>
+                            <span className="absolute inset-0 rounded-full animate-ping" style={{ background: 'rgba(131,110,253,0.15)' }} />
+                            <svg className="w-3.5 h-3.5 relative z-10" style={{ color: '#836EFD' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                          </>
+                        ) : (
+                          <>
+                            <span className="absolute inset-0 rounded-full animate-pulse" style={{ background: 'rgba(34,197,94,0.12)' }} />
+                            <svg className="w-3.5 h-3.5 relative z-10" style={{ color: '#22c55e' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
 
-              {faucetResult && (
-                <div className="w-full md:w-auto">
-                  <div className={`p-3 rounded-lg text-xs border ${
-                    faucetResult.success 
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                  }`}>
-                    <p className="font-semibold">{faucetResult.message}</p>
-                    {faucetResult.txHash && (
-                      <p className="mt-1 font-mono break-all opacity-85">
-                        Tx Faucet: <a 
-                          href={`https://testnet.monadscan.com/tx/${faucetResult.txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline hover:text-emerald-300"
-                        >
-                          {faucetResult.txHash.slice(0, 10)}...{faucetResult.txHash.slice(-10)}
-                        </a>
-                      </p>
-                    )}
-                  </div>
+              {/* Claim Button */}
+              {showReveal && (
+                <div className="px-5 pb-5 sm:px-6 sm:pb-6">
+                  <button
+                    onClick={() => alert('🎉 ¡Demo! En producción, esto ejecutaría claimReward() on-chain via Mozi Wallet.')}
+                    className="w-full rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white transition-all active:scale-95"
+                    style={{
+                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      boxShadow: '0 6px 30px rgba(34,197,94,0.3)',
+                    }}
+                  >
+                    💰 Claim My Winnings
+                  </button>
                 </div>
               )}
-            </section>
-          )}
-
-          {/* Live Transaction Feed marquee */}
-          {compDetails && compDetails.state === 1 && (
-            <section className="rounded-2xl border border-slate-900 bg-slate-950/60 py-3.5 px-6 overflow-hidden relative">
-              <style dangerouslySetInnerHTML={{__html: `
-                @keyframes marquee {
-                  0% { transform: translateX(50%); }
-                  100% { transform: translateX(-100%); }
-                }
-                .animate-marquee {
-                  animation: marquee 25s linear infinite;
-                }
-              `}} />
-
-              <div className="flex items-center gap-4 text-xs font-mono">
-                <span className="text-[#836EFD] font-black uppercase whitespace-nowrap flex items-center gap-1.5 shrink-0 bg-slate-950 pr-4 z-10 relative">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  Feed de Votos en Vivo ({txCount} tx):
-                </span>
-                <div className="w-full overflow-hidden relative h-5 flex items-center">
-                  <div className="absolute whitespace-nowrap flex gap-12 animate-marquee text-slate-500 text-[10px] font-bold">
-                    {projects.length > 0 ? (
-                      <>
-                        <span>0x12a3...votó por {projects[0]?.title || 'Candidato 1'} (0.1 MONAD)</span>
-                        <span>•</span>
-                        <span>0xf43b...votó por {projects[1]?.title || projects[0]?.title || 'Candidato'} (0.1 MONAD)</span>
-                        <span>•</span>
-                        <span>0x99e2...votó por {projects[1]?.title || 'Candidato'} (0.1 MONAD)</span>
-                        <span>•</span>
-                        <span>0x3a5f...votó por {projects[2]?.title || projects[0]?.title || 'Candidato'} (0.1 MONAD)</span>
-                        <span>•</span>
-                        <span>0x7e8c...votó por {projects[0]?.title || 'Candidato'} (0.1 MONAD)</span>
-                      </>
-                    ) : (
-                      <span>Esperando los primeros votos del concurso...</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
-
-          </div>
-
-        {/* Footer */}
-        <footer className="border-t border-slate-800/40 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© 2026 OpenPod.io. Todos los derechos reservados.</p>
-          <div className="flex gap-4">
-            <a href="https://docs.monad.xyz" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">Documentación</a>
-            <a href="https://faucet.monad.xyz" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">Faucet Oficial</a>
-            <a href="https://testnet.monadvision.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">MonadVision</a>
-          </div>
-        </footer>
-
+            </div>
+          </section>
+        )}
       </main>
+
+      {/* ════════════ FOOTER ════════════ */}
+      <footer className="mt-auto border-t py-6 text-center" style={{ borderColor: 'rgba(51,51,68,0.3)' }}>
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#475569' }}>
+          OpenPod.io • Built on Monad Testnet • Hackathon Demo Mode
+        </p>
+      </footer>
     </div>
   )
 }
