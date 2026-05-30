@@ -111,7 +111,7 @@ export function MediaCard({
               </button>
               
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-3">
-                {isPlaying ? 'Playing Audio' : 'Audio Track'}
+                {isPlaying ? 'Reproduciendo Audio' : 'Pista de Audio'}
               </span>
             </div>
           )}
@@ -127,7 +127,7 @@ export function MediaCard({
               {type === 'video' ? 'Video' : 'Audio'}
             </span>
           </div>
-          <p className="text-xs text-purple-400/90 font-medium">By {author}</p>
+          <p className="text-xs text-purple-400/90 font-medium">Por {author}</p>
           <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
             {description}
           </p>
@@ -137,7 +137,7 @@ export function MediaCard({
       {/* Vote / Prediction Interaction Panel */}
       <div className="mt-6 pt-4 border-t border-slate-800/80 space-y-3">
         <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
-          <span>Candidate Creator</span>
+          <span>Creador del Proyecto</span>
           <span className="font-bold">{candidateAddress.slice(0, 6)}...{candidateAddress.slice(-4)}</span>
         </div>
 
@@ -147,7 +147,7 @@ export function MediaCard({
               ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse shadow-[0_0_12px_rgba(52,211,153,0.2)]'
               : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
           }`}>
-            {odds} {highlightOdds && '🔥 UNDERDOG'}
+            {odds} {highlightOdds && '🔥 MENOS FAVORITO'}
           </div>
         )}
 
@@ -159,14 +159,14 @@ export function MediaCard({
           {isVoting ? (
             <>
               <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              <span>Confirming on Monad...</span>
+              <span>Confirmando en Monad...</span>
             </>
           ) : (
             <>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
               </svg>
-              <span>Predict & Vote (0.1 MONAD)</span>
+              <span>Predecir y Votar (0.1 MONAD)</span>
             </>
           )}
         </button>

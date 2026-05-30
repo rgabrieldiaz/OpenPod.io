@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OpenPod | Decentralized Podcasting on Monad",
-  description: "The premier decentralized Web3 podcast platform built on the Monad Testnet.",
+  title: "OpenPod.io | Podcasting Descentralizado en Monad",
+  description: "La plataforma de podcast Web3 descentralizada líder construida sobre la Testnet de Monad.",
 };
 
 export default function RootLayout({
@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">

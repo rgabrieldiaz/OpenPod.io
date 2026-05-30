@@ -60,7 +60,7 @@ export function CountdownTimer({ endTime }: CountdownTimerProps) {
 
         <div className="flex flex-col items-start">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">
-            Time Remaining
+            Tiempo Restante
           </span>
           
           <div className="flex items-baseline font-mono text-3xl sm:text-4xl font-extrabold mt-1">
@@ -84,7 +84,7 @@ export function CountdownTimer({ endTime }: CountdownTimerProps) {
         <div className="flex items-center gap-1.5 self-end pb-2 pl-2 border-l border-slate-800/80">
           <span className={`h-2 w-2 rounded-full ${timeLeft.isEnded ? 'bg-rose-500' : 'bg-cyan-500 animate-ping'} duration-1000`} />
           <span className="text-[10px] font-bold font-mono tracking-wider text-slate-400 uppercase">
-            {timeLeft.isEnded ? 'ENDED' : 'LIVE'}
+            {timeLeft.isEnded ? 'FINALIZADO' : 'EN VIVO'}
           </span>
         </div>
       </div>

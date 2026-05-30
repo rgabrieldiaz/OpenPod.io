@@ -40,36 +40,36 @@ export default function Home() {
   // Simulated active competition details
   const competitionId = 1n
 
-  // Mock candidates / projects matching OpenPodio.t.sol test addresses with Prediction Market odds
+  // Candidatos / proyectos simulados que coinciden con las direcciones de prueba de OpenPodio.t.sol con cuotas del mercado de predicción
   const projects = [
     {
       title: 'Neon Horizons',
       author: 'Pixel Forge Studios',
-      description: 'A cyberpunk short film depicting the struggle of digital identities in the parallel consensus grid.',
+      description: 'Un cortometraje cyberpunk que retrata la lucha de las identidades digitales en la red de consenso paralelo.',
       type: 'video' as const,
       src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
       candidateAddress: '0x4444444444444444444444444444444444444444' as `0x${string}`,
-      odds: 'Odds: 2.1x',
+      odds: 'Multiplicador: 2.1x',
       highlightOdds: false,
     },
     {
       title: 'Parallel Pulse',
       author: 'EVM Orchestra',
-      description: 'An electronic synthwave musical composition inspired by the asynchronous speed of parallel transactions.',
+      description: 'Una composición de música synthwave electrónica inspirada en la velocidad asíncrona de las transacciones paralelas.',
       type: 'audio' as const,
       src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
       candidateAddress: '0x5555555555555555555555555555555555555555' as `0x${string}`,
-      odds: 'Odds: 5.4x',
-      highlightOdds: true, // Marked as Underdog with higher payout
+      odds: 'Multiplicador: 5.4x',
+      highlightOdds: true, // Marcado como Underdog con mayor pago
     },
     {
       title: 'Monad Scaling Engine',
       author: 'Devnads Core Team',
-      description: 'A technical pitch walkthrough explaining the optimization of parallel state databases and cryptographic execution lanes.',
+      description: 'Una presentación técnica explicativa sobre la optimización de las bases de datos de estado paralelo y los carriles de ejecución criptográfica.',
       type: 'video' as const,
       src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
       candidateAddress: '0x6666666666666666666666666666666666666666' as `0x${string}`,
-      odds: 'Odds: 1.5x',
+      odds: 'Multiplicador: 1.5x',
       highlightOdds: false,
     },
   ]
@@ -101,7 +101,7 @@ export default function Home() {
       if (response.ok && data.txHash) {
         setFaucetResult({
           success: true,
-          message: `Successfully requested 1 MONAD!`,
+          message: `¡Se ha solicitado con éxito 1 MONAD!`,
           txHash: data.txHash,
         })
         // Refetch balance after short delay
@@ -109,13 +109,13 @@ export default function Home() {
       } else {
         setFaucetResult({
           success: false,
-          message: data.message || 'Faucet request failed. You might be rate-limited or the faucet may be dry.',
+          message: data.message || 'La solicitud al faucet falló. Es posible que tengas un límite de frecuencia activo o que el faucet no tenga fondos.',
         })
       }
     } catch (err: any) {
       setFaucetResult({
         success: false,
-        message: err.message || 'An error occurred while connecting to the faucet API.',
+        message: err.message || 'Ocurrió un error al conectar con la API del faucet.',
       })
     } finally {
       setFaucetLoading(false)
@@ -139,7 +139,7 @@ export default function Home() {
       const hash = await voteInCompetition(competitionId, candidate)
       setVoteResult({
         success: true,
-        message: `Voted successfully for ${title}!`,
+        message: `¡Votado con éxito por ${title}!`,
         txHash: hash,
       })
       // Refetch balance
@@ -147,7 +147,7 @@ export default function Home() {
     } catch (err: any) {
       setVoteResult({
         success: false,
-        message: err.shortMessage || err.message || 'Transaction rejected or failed.',
+        message: err.shortMessage || err.message || 'Transacción rechazada o fallida.',
       })
     }
   }
@@ -157,7 +157,7 @@ export default function Home() {
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
         <div className="flex flex-col items-center gap-4">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-500 border-t-transparent"></div>
-          <p className="text-sm font-medium tracking-wide">Loading OpenPod...</p>
+          <p className="text-sm font-medium tracking-wide">Cargando OpenPod.io...</p>
         </div>
       </div>
     )
@@ -180,8 +180,8 @@ export default function Home() {
               <div className="absolute inset-0 rounded-xl border border-white/20 animate-pulse" />
             </div>
             <div>
-              <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">OpenPodio</span>
-              <span className="ml-2 rounded-full bg-[#836EFD]/10 px-2.5 py-0.5 text-xs font-semibold text-[#836EFD] border border-[#836EFD]/20">Web3 Prediction Hub</span>
+              <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">OpenPod.io</span>
+              <span className="ml-2 rounded-full bg-[#836EFD]/10 px-2.5 py-0.5 text-xs font-semibold text-[#836EFD] border border-[#836EFD]/20">Plataforma de Predicciones Web3</span>
             </div>
           </div>
 
@@ -189,7 +189,7 @@ export default function Home() {
             {isConnected ? (
               <div className="flex items-center gap-3">
                 <div className="hidden sm:block text-right">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mozi Connected</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mozi Conectado</p>
                   <p className="text-sm font-semibold text-slate-200 font-mono">
                     {address?.slice(0, 6)}...{address?.slice(-4)}
                   </p>
@@ -198,7 +198,7 @@ export default function Home() {
                   onClick={disconnectWallet}
                   className="rounded-lg bg-slate-900 hover:bg-slate-800 px-4 py-2 text-sm font-medium border border-slate-700 transition duration-200 active:scale-95"
                 >
-                  Disconnect
+                  Desconectar
                 </button>
               </div>
             ) : (
@@ -208,7 +208,7 @@ export default function Home() {
                 className="relative group overflow-hidden rounded-lg bg-gradient-to-r from-[#836EFD] to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#836EFD]/25 transition duration-200 hover:shadow-[#836EFD]/40 active:scale-95 disabled:opacity-50"
               >
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                {isConnecting ? 'Connecting...' : 'Connect Mozi Wallet'}
+                {isConnecting ? 'Conectando...' : 'Conectar Billetera Mozi'}
               </button>
             )}
           </div>
@@ -224,15 +224,15 @@ export default function Home() {
                 </svg>
               </div>
               <div>
-                <h4 className="text-sm font-bold text-rose-300">Unsupported Network Detected</h4>
-                <p className="text-xs text-rose-400/80">Your wallet is connected to a different network. Switch to Monad Testnet to predict results.</p>
+                <h4 className="text-sm font-bold text-rose-300">Red no soportada detectada</h4>
+                <p className="text-xs text-rose-400/80">Tu billetera está conectada a una red diferente. Cambia a Monad Testnet para predecir los resultados.</p>
               </div>
             </div>
             <button
               onClick={switchNetwork}
               className="w-full md:w-auto rounded-lg bg-rose-500 hover:bg-rose-600 px-4 py-2.5 text-xs font-bold text-white transition duration-200 active:scale-95 whitespace-nowrap shadow-lg shadow-rose-500/20"
             >
-              Switch to Monad Testnet
+              Cambiar a Monad Testnet
             </button>
           </div>
         )}
@@ -246,10 +246,10 @@ export default function Home() {
             
             <div className="space-y-2 text-center md:text-left">
               <h2 className="text-2xl md:text-3xl font-extrabold text-white">
-                Active Podcast Competition
+                Competencia de Podcast Activa
               </h2>
               <p className="text-sm text-slate-400 max-w-lg leading-relaxed">
-                Review the simulated participant projects below. Vote for your favorite to deposit the 0.1 MONAD racing fee and enter the 80/25 pool split!
+                Revisa los proyectos de los participantes simulados a continuación. ¡Vota por tu favorito para depositar la tarifa de entrada de 0.1 MONAD y participar en la distribución del pozo (80/20)!
               </p>
             </div>
 
@@ -257,9 +257,9 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 flex-shrink-0">
               {/* Highlighted Total Pool display in Violeta Eléctrico */}
               <div className="text-center sm:text-left sm:border-r border-slate-800 sm:pr-8 space-y-1">
-                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Total Pool</p>
+                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Pozo Total</p>
                 <p className="text-xl sm:text-2xl font-black text-[#836EFD] font-mono leading-none tracking-tight">
-                  1,420.5 MONAD
+                  1.420,5 MONAD
                 </p>
               </div>
 
@@ -274,7 +274,7 @@ export default function Home() {
           <section className="space-y-6">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
               <h3 className="text-lg font-bold text-white tracking-wide uppercase font-mono text-sm sm:text-base">
-                // Competitor Submissions
+                // Proyectos Competidores
               </h3>
               {voteResult && (
                 <div className={`text-xs px-3 py-1 rounded border ${
@@ -308,7 +308,7 @@ export default function Home() {
             </div>
           </section>
 
-          {/* OpenPodio Reveal Section: Locked blind vote podiums */}
+          {/* OpenPod.io Reveal Section: Locked blind vote podiums */}
           <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-6 md:p-8 space-y-6 relative overflow-hidden">
             <div className="absolute bottom-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
 
@@ -317,7 +317,7 @@ export default function Home() {
                 <svg className="w-4 h-4 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
-                OpenPodio Reveal HUD
+                HUD de Revelación de OpenPod.io
               </h3>
               <p className="text-xs text-slate-400">
                 Podio protegido por Voto Ciego. Se calculará on-chain al llegar a 00:00:00
@@ -326,9 +326,9 @@ export default function Home() {
 
             <div className="grid gap-4 md:grid-cols-3">
               {[
-                { rank: '1° Puesto (Ganador)', state: '[ ? ] RECOMPENSA ESTIMADA: 1,136.4 MONAD (80% para el Creador)', subtext: 'Creator prize share' },
-                { rank: '2° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284.1 MONAD (20% para Votantes Ganadores)', subtext: 'Pool share claimed by predicting voters' },
-                { rank: '3° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284.1 MONAD (20% para Votantes Ganadores)', subtext: 'Pool share claimed by predicting voters' },
+                { rank: '1° Puesto (Ganador)', state: '[ ? ] RECOMPENSA ESTIMADA: 1.136,4 MONAD (80% para el Creador)', subtext: 'Participación del creador en el premio' },
+                { rank: '2° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284,1 MONAD (20% para Votantes Ganadores)', subtext: 'Participación del pozo reclamada por votantes ganadores' },
+                { rank: '3° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284,1 MONAD (20% para Votantes Ganadores)', subtext: 'Participación del pozo reclamada por votantes ganadores' },
               ].map((pod, i) => (
                 <div 
                   key={i} 
@@ -368,15 +368,15 @@ export default function Home() {
                   Monad Testnet Faucet Portal
                 </h4>
                 <p className="text-xs text-slate-400 max-w-xl">
-                  Need testnet MONAD tokens to vote or test transaction speeds? Request funds immediately via the devnads faucet hook.
+                  ¿Necesitas tokens MONAD de prueba para votar o probar la velocidad de las transacciones? Solicita fondos de inmediato a través del portal de faucet.
                 </p>
               </div>
 
               <div className="w-full md:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <div className="text-center sm:text-right pr-4 border-slate-800 sm:border-r">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Your Balance</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tu Saldo</p>
                   <p className="text-md font-bold text-slate-200 font-mono">
-                    {balanceData ? `${Number(formatUnits(balanceData.value, balanceData.decimals)).toFixed(4)} ${balanceData.symbol}` : 'Loading...'}
+                    {balanceData ? `${Number(formatUnits(balanceData.value, balanceData.decimals)).toFixed(4)} ${balanceData.symbol}` : 'Cargando...'}
                   </p>
                 </div>
 
@@ -388,10 +388,10 @@ export default function Home() {
                   {faucetLoading ? (
                     <>
                       <div className="h-3 w-3 animate-spin rounded-full border-2 border-[#836EFD] border-t-transparent" />
-                      <span>Requesting 1 MONAD...</span>
+                      <span>Solicitando 1 MONAD...</span>
                     </>
                   ) : (
-                    <span>Request 1 MONAD</span>
+                    <span>Solicitar 1 MONAD</span>
                   )}
                 </button>
               </div>
@@ -406,7 +406,7 @@ export default function Home() {
                     <p className="font-semibold">{faucetResult.message}</p>
                     {faucetResult.txHash && (
                       <p className="mt-1 font-mono break-all opacity-85">
-                        Faucet Tx: <a 
+                        Tx Faucet: <a 
                           href={`https://testnet.monadscan.com/tx/${faucetResult.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -437,21 +437,21 @@ export default function Home() {
             <div className="flex items-center gap-4 text-xs font-mono">
               <span className="text-[#836EFD] font-black uppercase whitespace-nowrap flex items-center gap-1.5 shrink-0 bg-slate-950 pr-4 z-10 relative">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-                Live Bets Feed:
+                Feed de Votos en Vivo:
               </span>
               <div className="w-full overflow-hidden relative h-5 flex items-center">
                 <div className="absolute whitespace-nowrap flex gap-12 animate-marquee text-slate-500 text-[10px] font-bold">
-                  <span>0x12a3...voted Neon Horizons (0.1 MONAD)</span>
+                  <span>0x12a3...votó por Neon Horizons (0.1 MONAD)</span>
                   <span>•</span>
-                  <span>0xf43b...voted Parallel Pulse (0.1 MONAD)</span>
+                  <span>0xf43b...votó por Parallel Pulse (0.1 MONAD)</span>
                   <span>•</span>
-                  <span>0x99e2...voted Parallel Pulse (0.1 MONAD)</span>
+                  <span>0x99e2...votó por Parallel Pulse (0.1 MONAD)</span>
                   <span>•</span>
-                  <span>0x3a5f...voted Monad Scaling Engine (0.1 MONAD)</span>
+                  <span>0x3a5f...votó por Monad Scaling Engine (0.1 MONAD)</span>
                   <span>•</span>
-                  <span>0x7e8c...voted Neon Horizons (0.1 MONAD)</span>
+                  <span>0x7e8c...votó por Neon Horizons (0.1 MONAD)</span>
                   <span>•</span>
-                  <span>0x6b2d...voted Parallel Pulse (0.1 MONAD)</span>
+                  <span>0x6b2d...votó por Parallel Pulse (0.1 MONAD)</span>
                 </div>
               </div>
             </div>
@@ -461,10 +461,10 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="border-t border-slate-800/40 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© 2026 OpenPodio. All rights reserved.</p>
+          <p>© 2026 OpenPod.io. Todos los derechos reservados.</p>
           <div className="flex gap-4">
-            <a href="https://docs.monad.xyz" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">Docs</a>
-            <a href="https://faucet.monad.xyz" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">Official Faucet</a>
+            <a href="https://docs.monad.xyz" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">Documentación</a>
+            <a href="https://faucet.monad.xyz" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">Faucet Oficial</a>
             <a href="https://testnet.monadvision.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition">MonadVision</a>
           </div>
         </footer>
