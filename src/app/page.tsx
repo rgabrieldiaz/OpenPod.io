@@ -38,7 +38,29 @@ export default function Home() {
 
   // Find current/latest competition ID
   const { count: compCount, refetch: refetchCompCount } = useCompetitionCount()
-  const currentCompId = compCount || 0n
+  const [selectedCompId, setSelectedCompId] = useState<bigint | null>(null)
+  const [searchPin, setSearchPin] = useState('')
+
+  useEffect(() => {
+    if (compCount && selectedCompId === null) {
+      setSelectedCompId(compCount)
+    }
+  }, [compCount, selectedCompId])
+
+  const currentCompId = selectedCompId || compCount || 0n
+
+  const handleLoadPin = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!searchPin) return
+    try {
+      const pin = BigInt(searchPin)
+      if (pin <= 0n) return
+      setSelectedCompId(pin)
+      setSearchPin('')
+    } catch {
+      // ignore
+    }
+  }
 
   // Fetch real-time on-chain competition state if available
   const { details: compDetails, refetch: refetchCompDetails } = useCompetitionDetails(currentCompId)
@@ -81,6 +103,7 @@ export default function Home() {
   })
 
   const totalPoolNumber = compDetails ? Number(formatUnits(compDetails.totalPool, 18)) : 0.0
+  const doesCompExist = compDetails && compDetails.id > 0n;
 
   const [faucetLoading, setFaucetLoading] = useState(false)
   const [faucetResult, setFaucetResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
@@ -395,7 +418,7 @@ export default function Home() {
       <main className="relative z-10 mx-auto max-w-6xl px-6 py-8 md:py-12 flex flex-col min-h-screen justify-between gap-10">
         
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-slate-800/40 pb-6">
+        <header className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-800/40 pb-6 gap-4">
           <div className="flex items-center gap-3">
             <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-[#836EFD] to-indigo-500 flex items-center justify-center shadow-lg shadow-[#836EFD]/20">
               <span className="font-black text-white text-lg">O</span>
@@ -406,6 +429,24 @@ export default function Home() {
               <span className="ml-2 rounded-full bg-[#836EFD]/10 px-2.5 py-0.5 text-xs font-semibold text-[#836EFD] border border-[#836EFD]/20">Plataforma de Predicciones Web3</span>
             </div>
           </div>
+
+          {/* PIN Search Bar */}
+          <form onSubmit={handleLoadPin} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1.5 pl-3">
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">PIN CONCURSO:</span>
+            <input
+              type="number"
+              placeholder="Ej. 1"
+              value={searchPin}
+              onChange={(e) => setSearchPin(e.target.value)}
+              className="w-16 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border border-[#836EFD]/30 px-3.5 py-1.5 text-xs font-bold text-[#836EFD] transition active:scale-95 whitespace-nowrap"
+            >
+              Cargar PIN
+            </button>
+          </form>
 
           <div>
             {isConnected ? (
@@ -461,9 +502,105 @@ export default function Home() {
 
         {/* Dashboard Sections */}
         <div className="space-y-12">
+
+          {/* State: Competition PIN does not exist */}
+          {currentCompId > 0n && !doesCompExist && (
+            <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-8 text-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400 mx-auto">
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-white uppercase font-mono tracking-widest">
+                El Concurso con PIN #{currentCompId.toString()} no existe
+              </h3>
+              <p className="text-sm text-slate-400 max-w-md mx-auto">
+                El código de concurso ingresado no corresponde a ninguna competencia registrada en la blockchain. Puedes ingresar otro PIN en la barra de búsqueda de arriba, o crear un nuevo concurso.
+              </p>
+              
+              {isConnected ? (
+                <div className="pt-4 max-w-lg mx-auto">
+                  <div className="bg-slate-950/60 p-6 rounded-2xl border border-slate-900 space-y-4 text-left">
+                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest font-mono">// CREAR NUEVO CONCURSO</h4>
+                    <form onSubmit={handleCreateConcurso} className="flex flex-col sm:flex-row gap-3 items-end">
+                      <div className="w-full space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre del Concurso</label>
+                        <input
+                          type="text"
+                          placeholder="Ej. Mi Nuevo Podcast"
+                          value={concursoTitle}
+                          onChange={(e) => setConcursoTitle(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
+                          required
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={createLoading}
+                        className="w-full sm:w-auto rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-2.5 px-4 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 whitespace-nowrap shadow-lg shadow-[#836EFD]/25"
+                      >
+                        {createLoading ? 'Creando...' : 'Crear'}
+                      </button>
+                    </form>
+                    {createResult && (
+                      <p className="text-xs text-emerald-400 mt-2">{createResult.message}</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-4 text-xs text-slate-500">
+                  Conecta tu billetera arriba para poder crear una nueva competencia.
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* State: No competitions exist at all yet */}
+          {currentCompId === 0n && (
+            <section className="bg-slate-900/10 border border-slate-800 bg-slate-950/40 rounded-3xl p-6 md:p-8 space-y-6 relative overflow-hidden text-center">
+              <div className="absolute top-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
+              <h3 className="text-lg font-bold text-white uppercase font-mono tracking-widest">// DEBES CREAR EL PRIMER CONCURSO</h3>
+              <p className="text-sm text-slate-400 max-w-md mx-auto">
+                No se han registrado competencias en la plataforma. Conecta tu billetera y crea el primer concurso para comenzar.
+              </p>
+
+              {isConnected ? (
+                <form onSubmit={handleCreateConcurso} className="max-w-lg mx-auto bg-slate-950/60 p-6 rounded-2xl border border-slate-900 space-y-4 text-left">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase">Nombre del Concurso</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Podcast Battle de Monad #1"
+                      value={concursoTitle}
+                      onChange={(e) => setConcursoTitle(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={createLoading}
+                    className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
+                  >
+                    {createLoading ? 'Creando Concurso...' : 'Crear Concurso Principal'}
+                  </button>
+                  {createResult && (
+                    <p className="text-xs text-emerald-400 mt-2">{createResult.message}</p>
+                  )}
+                </form>
+              ) : (
+                <button
+                  onClick={connectWallet}
+                  className="rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 px-6 text-xs font-black text-white transition duration-200"
+                >
+                  Conectar Billetera Mozi
+                </button>
+              )}
+            </section>
+          )}
           
           {/* Dynamic Control Panel */}
-          {isConnected && (
+          {isConnected && doesCompExist && compDetails && (
             <section className="bg-slate-900/10 border border-slate-800 bg-slate-950/40 rounded-3xl p-6 md:p-8 space-y-6 relative overflow-hidden">
               <div className="absolute top-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
               
@@ -471,14 +608,14 @@ export default function Home() {
                 <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                 </svg>
-                PANEL DE CONTROL DE TORNEO
+                PANEL DE CONTROL DE TORNEO (PIN #{currentCompId.toString()})
               </h3>
 
-              {/* State A: No competition or latest ended */}
-              {(currentCompId === 0n || compDetails?.state === 2) && (
+              {/* State A: Competition exists but has ended */}
+              {compDetails.state === 2 && (
                 <div className="space-y-4">
                   <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-sm text-slate-300">
-                    ℹ️ No hay ningún concurso activo en este momento. ¡Crea uno nuevo para iniciar la competencia!
+                    ℹ️ Esta competencia ha finalizado. Puedes crear una nueva competencia si lo deseas (recibirá el siguiente PIN disponible).
                   </div>
 
                   <form onSubmit={handleCreateConcurso} className="grid gap-4 md:grid-cols-3 items-end">
@@ -486,7 +623,7 @@ export default function Home() {
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre del Concurso</label>
                       <input
                         type="text"
-                        placeholder="Ej. Podcast Battle de Monad #1"
+                        placeholder="Ej. Podcast Battle de Monad #2"
                         value={concursoTitle}
                         onChange={(e) => setConcursoTitle(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition"
@@ -514,18 +651,13 @@ export default function Home() {
                       createResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                     }`}>
                       {createResult.message}
-                      {createResult.txHash && (
-                        <p className="mt-1 font-mono break-all opacity-85">
-                          Tx Hash: <a href={`https://testnet.monadscan.com/tx/${createResult.txHash}`} target="_blank" rel="noopener noreferrer" className="underline">{createResult.txHash}</a>
-                        </p>
-                      )}
                     </div>
                   )}
                 </div>
               )}
 
               {/* State B: Competition exists in Upcoming state */}
-              {compDetails && compDetails.state === 0 && (
+              {compDetails.state === 0 && (
                 <div className="grid gap-6 md:grid-cols-2">
                   {/* Left Column: Postulate Form */}
                   <div className="space-y-4 border-r border-slate-800/60 pr-0 md:pr-6">
@@ -653,7 +785,7 @@ export default function Home() {
               )}
 
               {/* State C: Active competition */}
-              {compDetails && compDetails.state === 1 && (
+              {compDetails.state === 1 && (
                 <div className="p-4 rounded-2xl bg-cyan-500/5 border border-cyan-500/25 text-sm text-cyan-300">
                   ⚡ La votación está en curso para el concurso **"{compDetails.title}"**. Revisa los competidores a continuación y emite tu voto predictor.
                 </div>
@@ -662,13 +794,13 @@ export default function Home() {
           )}
 
           {/* Active Competition Header with Countdown Timer and Total Pool */}
-          {compDetails && (
+          {doesCompExist && compDetails && (
             <section className="flex flex-col md:flex-row items-center justify-between gap-8 bg-slate-900/10 border border-slate-800/40 rounded-3xl p-6 md:p-8 relative overflow-hidden">
               <div className="absolute top-0 right-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
               
               <div className="space-y-2 text-center md:text-left">
                 <h2 className="text-2xl md:text-3xl font-extrabold text-white">
-                  Concurso: {compDetails.title}
+                  Concurso #{compDetails.id.toString()}: {compDetails.title}
                 </h2>
                 <p className="text-sm text-slate-400 max-w-lg leading-relaxed">
                   {compDetails.state === 0 
@@ -698,57 +830,59 @@ export default function Home() {
           )}
 
           {/* Grid Panel: Participating Projects Media Cards */}
-          <section className="space-y-6">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
-              <h3 className="text-lg font-bold text-white tracking-wide uppercase font-mono text-sm sm:text-base">
-                // Proyectos Competidores
-              </h3>
-              {voteResult && (
-                <div className={`text-xs px-3 py-1 rounded border ${
-                  voteResult.success 
-                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                    : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                }`}>
-                  {voteResult.message}
-                </div>
-              )}
-            </div>
-
-            {projects.length > 0 ? (
-              <div className="grid gap-6 md:grid-cols-3">
-                {projects.map((project, i) => (
-                  <MediaCard
-                    key={i}
-                    title={project.title}
-                    author={project.author}
-                    description={project.description}
-                    src={project.src}
-                    candidateAddress={project.candidateAddress}
-                    onVote={handleVote}
-                    isVoting={isVoting}
-                    isConnected={isConnected}
-                    isWrongNetwork={isWrongNetwork}
-                    odds={project.odds}
-                    highlightOdds={project.highlightOdds}
-                    status={getCompStatus()}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-3xl border border-slate-900 bg-slate-950/40 p-12 text-center text-slate-500">
-                <svg className="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V4a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                </svg>
-                <p className="text-sm font-semibold">Aún no hay creadores registrados en este concurso.</p>
-                {compDetails && compDetails.state === 0 && (
-                  <p className="text-xs text-slate-600 mt-1">¡Utiliza el formulario de postulación de arriba para registrar el primer proyecto!</p>
+          {doesCompExist && (
+            <section className="space-y-6">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
+                <h3 className="text-lg font-bold text-white tracking-wide uppercase font-mono text-sm sm:text-base">
+                  // Proyectos Competidores
+                </h3>
+                {voteResult && (
+                  <div className={`text-xs px-3 py-1 rounded border ${
+                    voteResult.success 
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                  }`}>
+                    {voteResult.message}
+                  </div>
                 )}
               </div>
-            )}
-          </section>
+
+              {projects.length > 0 ? (
+                <div className="grid gap-6 md:grid-cols-3">
+                  {projects.map((project, i) => (
+                    <MediaCard
+                      key={i}
+                      title={project.title}
+                      author={project.author}
+                      description={project.description}
+                      src={project.src}
+                      candidateAddress={project.candidateAddress}
+                      onVote={handleVote}
+                      isVoting={isVoting}
+                      isConnected={isConnected}
+                      isWrongNetwork={isWrongNetwork}
+                      odds={project.odds}
+                      highlightOdds={project.highlightOdds}
+                      status={getCompStatus()}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-slate-900 bg-slate-950/40 p-12 text-center text-slate-500">
+                  <svg className="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V4a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                  </svg>
+                  <p className="text-sm font-semibold">Aún no hay creadores registrados en este concurso.</p>
+                  {compDetails && compDetails.state === 0 && (
+                    <p className="text-xs text-slate-600 mt-1">¡Utiliza el formulario de postulación de arriba para registrar el primer proyecto!</p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* OpenPod.io Reveal Section: Locked blind vote podiums */}
-          {compDetails && (
+          {doesCompExist && compDetails && (
             <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-6 md:p-8 space-y-6 relative overflow-hidden">
               <div className="absolute bottom-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
 
