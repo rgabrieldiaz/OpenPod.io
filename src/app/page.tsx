@@ -18,7 +18,7 @@ interface Participant {
 interface ContestData {
   name: string
   description: string
-  durationMinutes: number
+  endDateTime: string
 }
 
 /* ─────────────────────────────────────────────
@@ -53,7 +53,14 @@ export default function Home() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('create')
 
   /* ── Contest Data ── */
-  const [contest, setContest] = useState<ContestData>({ name: '', description: '', durationMinutes: 2 })
+  // Default end = 2 hours from now
+  const [contest, setContest] = useState<ContestData>(() => {
+    const d = new Date(Date.now() + 2 * 60 * 60 * 1000)
+    // Format for datetime-local: YYYY-MM-DDTHH:MM
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const defaultEnd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    return { name: '', description: '', endDateTime: defaultEnd }
+  })
   const [pin] = useState(generatePin)
 
   /* ── Participants ── */
@@ -65,7 +72,7 @@ export default function Home() {
 
   /* ── Showcase / Voting ── */
   const [deadline, setDeadline] = useState<number | null>(null)
-  const [timeLeft, setTimeLeft] = useState({ m: 0, s: 0, ms: 0 })
+  const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0, ms: 0 })
   const [hasVoted, setHasVoted] = useState(false)
   const [votingFor, setVotingFor] = useState<string | null>(null)
   const [competitionEnded, setCompetitionEnded] = useState(false)
@@ -88,12 +95,14 @@ export default function Home() {
     timerRef.current = setInterval(() => {
       const diff = deadline - Date.now()
       if (diff <= 0) {
-        setTimeLeft({ m: 0, s: 0, ms: 0 })
+        setTimeLeft({ d: 0, h: 0, m: 0, s: 0, ms: 0 })
         endCompetition()
         return
       }
       setTimeLeft({
-        m: Math.floor(diff / 60000),
+        d: Math.floor(diff / 86400000),
+        h: Math.floor((diff % 86400000) / 3600000),
+        m: Math.floor((diff % 3600000) / 60000),
         s: Math.floor((diff % 60000) / 1000),
         ms: Math.floor((diff % 1000) / 10),
       })
@@ -103,7 +112,9 @@ export default function Home() {
 
   /* ── Handlers ── */
   const handleCreateContest = () => {
-    if (!contest.name.trim()) return
+    if (!contest.name.trim() || !contest.endDateTime) return
+    const end = new Date(contest.endDateTime).getTime()
+    if (end <= Date.now()) return
     setCurrentScreen('participants')
   }
 
@@ -128,7 +139,9 @@ export default function Home() {
 
   const handleLaunchCompetition = () => {
     if (participants.length < 2) return
-    setDeadline(Date.now() + contest.durationMinutes * 60 * 1000)
+    const end = new Date(contest.endDateTime).getTime()
+    if (end <= Date.now()) return
+    setDeadline(end)
     setCurrentScreen('showcase')
   }
 
@@ -271,30 +284,42 @@ export default function Home() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Duración de la Competencia</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {[1, 2, 5].map(min => (
-                    <button
-                      key={min}
-                      type="button"
-                      onClick={() => setContest(c => ({ ...c, durationMinutes: min }))}
-                      className="rounded-xl py-3 text-sm font-bold transition-all"
-                      style={{
-                        background: contest.durationMinutes === min ? '#836EFD' : 'rgba(15,15,22,0.9)',
-                        color: contest.durationMinutes === min ? '#fff' : '#94a3b8',
-                        border: `1px solid ${contest.durationMinutes === min ? '#836EFD' : 'rgba(51,51,68,0.6)'}`,
-                        boxShadow: contest.durationMinutes === min ? '0 4px 20px rgba(131,110,253,0.3)' : 'none',
-                      }}
-                    >
-                      {min} min
-                    </button>
-                  ))}
+                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Fecha y Hora de Cierre</label>
+                <div className="relative">
+                  <input
+                    type="datetime-local"
+                    value={contest.endDateTime}
+                    onChange={e => setContest(c => ({ ...c, endDateTime: e.target.value }))}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-all appearance-none"
+                    style={{ background: '#0B0B0F', border: '1px solid rgba(51,51,68,0.6)', colorScheme: 'dark' }}
+                    onFocus={e => e.target.style.borderColor = '#836EFD'}
+                    onBlur={e => e.target.style.borderColor = 'rgba(51,51,68,0.6)'}
+                  />
                 </div>
+                {contest.endDateTime && (() => {
+                  const diff = new Date(contest.endDateTime).getTime() - Date.now()
+                  if (diff <= 0) return (
+                    <p className="text-[10px] font-bold" style={{ color: '#f87171' }}>⚠ La fecha debe ser en el futuro</p>
+                  )
+                  const days = Math.floor(diff / 86400000)
+                  const hours = Math.floor((diff % 86400000) / 3600000)
+                  const mins = Math.floor((diff % 3600000) / 60000)
+                  const parts: string[] = []
+                  if (days > 0) parts.push(`${days}d`)
+                  if (hours > 0) parts.push(`${hours}h`)
+                  if (mins > 0) parts.push(`${mins}m`)
+                  return (
+                    <p className="text-[10px] font-bold" style={{ color: '#836EFD' }}>
+                      ⏱ Duración: {parts.join(' ') || '< 1m'} desde ahora
+                    </p>
+                  )
+                })()}
               </div>
 
               <button
                 onClick={handleCreateContest}
-                disabled={!contest.name.trim()}
+                disabled={!contest.name.trim() || !contest.endDateTime || new Date(contest.endDateTime).getTime() <= Date.now()}
                 className="w-full rounded-xl py-3.5 text-sm font-black text-white uppercase tracking-wider transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed"
                 style={{
                   background: 'linear-gradient(135deg, #836EFD 0%, #6C5CE7 50%, #836EFD 100%)',
@@ -503,19 +528,42 @@ export default function Home() {
                   {!competitionEnded && (
                     <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color: '#64748b' }}>Tiempo Restante</p>
                   )}
-                  <div className="flex items-baseline gap-1" style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                  <div className="flex items-baseline gap-0.5 sm:gap-1" style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                    {/* Days — only show when > 0 */}
+                    {(timeLeft.d > 0 || competitionEnded) && timeLeft.d > 0 && !competitionEnded && (
+                      <>
+                        <span className="text-3xl sm:text-4xl font-black text-white">{String(timeLeft.d).padStart(2, '0')}</span>
+                        <span className="text-xs sm:text-sm font-bold mr-1" style={{ color: '#64748b' }}>d</span>
+                      </>
+                    )}
+                    {/* Hours — show when days or hours > 0 */}
+                    {(timeLeft.d > 0 || timeLeft.h > 0) && !competitionEnded && (
+                      <>
+                        <span className="text-3xl sm:text-4xl font-black text-white">{String(timeLeft.h).padStart(2, '0')}</span>
+                        <span className="text-xl font-black" style={{ color: '#836EFD' }}>:</span>
+                      </>
+                    )}
+                    {/* Minutes */}
                     <span className="text-4xl sm:text-5xl font-black" style={{ color: competitionEnded ? '#22c55e' : '#fff' }}>
                       {competitionEnded ? '00' : String(timeLeft.m).padStart(2, '0')}
                     </span>
                     <span className="text-2xl font-black" style={{ color: '#836EFD' }}>:</span>
+                    {/* Seconds */}
                     <span className="text-4xl sm:text-5xl font-black" style={{ color: competitionEnded ? '#22c55e' : '#fff' }}>
                       {competitionEnded ? '00' : String(timeLeft.s).padStart(2, '0')}
                     </span>
                     <span className="text-2xl font-black" style={{ color: '#836EFD' }}>.</span>
+                    {/* Milliseconds */}
                     <span className="text-2xl font-black" style={{ color: competitionEnded ? '#4ade80' : '#94a3b8' }}>
                       {competitionEnded ? '00' : String(timeLeft.ms).padStart(2, '0')}
                     </span>
                   </div>
+                  {/* Deadline date display */}
+                  {deadline && !competitionEnded && (
+                    <p className="text-[9px] font-bold mt-1 uppercase tracking-widest" style={{ color: '#475569' }}>
+                      Cierre: {new Date(deadline).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}
+                    </p>
+                  )}
                 </div>
 
                 {/* Pool + Simulate */}
