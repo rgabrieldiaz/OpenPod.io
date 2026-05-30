@@ -40,7 +40,7 @@ export default function Home() {
   // Simulated active competition details
   const competitionId = 1n
 
-  // Mock candidates / projects matching OpenPodio.t.sol test addresses
+  // Mock candidates / projects matching OpenPodio.t.sol test addresses with Prediction Market odds
   const projects = [
     {
       title: 'Neon Horizons',
@@ -49,6 +49,8 @@ export default function Home() {
       type: 'video' as const,
       src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
       candidateAddress: '0x4444444444444444444444444444444444444444' as `0x${string}`,
+      odds: 'Odds: 2.1x',
+      highlightOdds: false,
     },
     {
       title: 'Parallel Pulse',
@@ -57,6 +59,8 @@ export default function Home() {
       type: 'audio' as const,
       src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
       candidateAddress: '0x5555555555555555555555555555555555555555' as `0x${string}`,
+      odds: 'Odds: 5.4x',
+      highlightOdds: true, // Marked as Underdog with higher payout
     },
     {
       title: 'Monad Scaling Engine',
@@ -65,6 +69,8 @@ export default function Home() {
       type: 'video' as const,
       src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
       candidateAddress: '0x6666666666666666666666666666666666666666' as `0x${string}`,
+      odds: 'Odds: 1.5x',
+      highlightOdds: false,
     },
   ]
 
@@ -234,20 +240,33 @@ export default function Home() {
         {/* Dashboard Sections */}
         <div className="space-y-12">
           
-          {/* Active Competition Header with Countdown Timer (00:04:32 active state) */}
-          <section className="flex flex-col md:flex-row items-center justify-between gap-8 bg-slate-900/10 border border-slate-800/40 rounded-3xl p-6 md:p-8">
+          {/* Active Competition Header with Countdown Timer (00:04:32 active state) and Total Pool */}
+          <section className="flex flex-col md:flex-row items-center justify-between gap-8 bg-slate-900/10 border border-slate-800/40 rounded-3xl p-6 md:p-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
+            
             <div className="space-y-2 text-center md:text-left">
               <h2 className="text-2xl md:text-3xl font-extrabold text-white">
                 Active Podcast Competition
               </h2>
               <p className="text-sm text-slate-400 max-w-lg leading-relaxed">
-                Review the simulated participant projects below. Vote for your favorite to deposit the 0.1 MONAD racing fee and enter the 80/20 reward pool split!
+                Review the simulated participant projects below. Vote for your favorite to deposit the 0.1 MONAD racing fee and enter the 80/25 pool split!
               </p>
             </div>
 
-            {/* Countdown timer with sub-second ticking visual */}
-            <div className="flex-shrink-0">
-              <CountdownTimer endTime={customEndTime} />
+            {/* Countdown timer & Total Pool wrapper */}
+            <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 flex-shrink-0">
+              {/* Highlighted Total Pool display in Violeta Eléctrico */}
+              <div className="text-center sm:text-left sm:border-r border-slate-800 sm:pr-8 space-y-1">
+                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Total Pool</p>
+                <p className="text-xl sm:text-2xl font-black text-[#836EFD] font-mono leading-none tracking-tight">
+                  1,420.5 MONAD
+                </p>
+              </div>
+
+              {/* Ticking millisecond timer */}
+              <div className="flex-shrink-0">
+                <CountdownTimer endTime={customEndTime} />
+              </div>
             </div>
           </section>
 
@@ -282,13 +301,17 @@ export default function Home() {
                   isVoting={isVoting}
                   isConnected={isConnected}
                   isWrongNetwork={isWrongNetwork}
+                  odds={project.odds}
+                  highlightOdds={project.highlightOdds}
                 />
               ))}
             </div>
           </section>
 
           {/* OpenPodio Reveal Section: Locked blind vote podiums */}
-          <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-6 md:p-8 space-y-6">
+          <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-6 md:p-8 space-y-6 relative overflow-hidden">
+            <div className="absolute bottom-0 left-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
+
             <div className="text-center md:text-left space-y-1.5">
               <h3 className="text-md font-bold text-white uppercase font-mono tracking-wider flex items-center gap-2 justify-center md:justify-start">
                 <svg className="w-4 h-4 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -303,9 +326,9 @@ export default function Home() {
 
             <div className="grid gap-4 md:grid-cols-3">
               {[
-                { rank: '1° Puesto (Ganador)', reward: '80% Creator / 20% Pool split' },
-                { rank: '2° Puesto', reward: 'Finalist' },
-                { rank: '3° Puesto', reward: 'Finalist' },
+                { rank: '1° Puesto (Ganador)', state: '[ ? ] RECOMPENSA ESTIMADA: 1,136.4 MONAD (80% para el Creador)', subtext: 'Creator prize share' },
+                { rank: '2° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284.1 MONAD (20% para Votantes Ganadores)', subtext: 'Pool share claimed by predicting voters' },
+                { rank: '3° Puesto', state: 'DISTRIBUCIÓN DEL POZO: 284.1 MONAD (20% para Votantes Ganadores)', subtext: 'Pool share claimed by predicting voters' },
               ].map((pod, i) => (
                 <div 
                   key={i} 
@@ -313,15 +336,20 @@ export default function Home() {
                 >
                   <div className="space-y-1 z-10">
                     <p className="text-xs font-mono font-bold text-slate-500 uppercase">{pod.rank}</p>
-                    <p className="text-sm font-extrabold text-slate-300">LOCKED_BLIND_STATE</p>
-                    <p className="text-[10px] text-slate-600 font-mono">{pod.reward}</p>
+                    <p className="text-xs sm:text-sm font-extrabold text-slate-200 tracking-tight leading-snug">
+                      {pod.state}
+                    </p>
+                    <p className="text-[9px] text-slate-500 font-mono mt-0.5">{pod.subtext}</p>
                   </div>
                   
-                  <div className="h-10 w-10 rounded-full bg-slate-900 border border-slate-800/80 flex items-center justify-center text-slate-600 z-10">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  {/* Lock icon with active ping pulse to simulate real-time on-chain actions */}
+                  <div className="relative h-10 w-10 shrink-0 rounded-full bg-slate-900 border border-slate-800/80 flex items-center justify-center text-slate-400 z-10 ml-3">
+                    <span className="absolute inset-0 rounded-full bg-[#836EFD]/25 animate-ping" />
+                    <svg className="w-4 h-4 text-[#836EFD] relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                   </div>
+                  
                   {/* Subtle hover effect background */}
                   <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none" />
                 </div>
@@ -393,6 +421,41 @@ export default function Home() {
               )}
             </section>
           )}
+
+          {/* Live Transaction Feed marquee */}
+          <section className="rounded-2xl border border-slate-900 bg-slate-950/60 py-3.5 px-6 overflow-hidden relative">
+            <style dangerouslySetInnerHTML={{__html: `
+              @keyframes marquee {
+                0% { transform: translateX(50%); }
+                100% { transform: translateX(-100%); }
+              }
+              .animate-marquee {
+                animation: marquee 25s linear infinite;
+              }
+            `}} />
+
+            <div className="flex items-center gap-4 text-xs font-mono">
+              <span className="text-[#836EFD] font-black uppercase whitespace-nowrap flex items-center gap-1.5 shrink-0 bg-slate-950 pr-4 z-10 relative">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+                Live Bets Feed:
+              </span>
+              <div className="w-full overflow-hidden relative h-5 flex items-center">
+                <div className="absolute whitespace-nowrap flex gap-12 animate-marquee text-slate-500 text-[10px] font-bold">
+                  <span>0x12a3...voted Neon Horizons (0.1 MONAD)</span>
+                  <span>•</span>
+                  <span>0xf43b...voted Parallel Pulse (0.1 MONAD)</span>
+                  <span>•</span>
+                  <span>0x99e2...voted Parallel Pulse (0.1 MONAD)</span>
+                  <span>•</span>
+                  <span>0x3a5f...voted Monad Scaling Engine (0.1 MONAD)</span>
+                  <span>•</span>
+                  <span>0x7e8c...voted Neon Horizons (0.1 MONAD)</span>
+                  <span>•</span>
+                  <span>0x6b2d...voted Parallel Pulse (0.1 MONAD)</span>
+                </div>
+              </div>
+            </div>
+          </section>
 
         </div>
 

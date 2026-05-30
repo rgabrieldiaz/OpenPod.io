@@ -13,6 +13,8 @@ interface MediaCardProps {
   isVoting: boolean
   isConnected: boolean
   isWrongNetwork: boolean
+  odds?: string
+  highlightOdds?: boolean
 }
 
 export function MediaCard({
@@ -26,6 +28,8 @@ export function MediaCard({
   isVoting,
   isConnected,
   isWrongNetwork,
+  odds,
+  highlightOdds,
 }: MediaCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -136,6 +140,16 @@ export function MediaCard({
           <span>Candidate Creator</span>
           <span className="font-bold">{candidateAddress.slice(0, 6)}...{candidateAddress.slice(-4)}</span>
         </div>
+
+        {odds && (
+          <div className={`w-full py-1.5 px-3 rounded-lg text-center text-[11px] font-black font-mono border ${
+            highlightOdds
+              ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse shadow-[0_0_12px_rgba(52,211,153,0.2)]'
+              : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+          }`}>
+            {odds} {highlightOdds && '🔥 UNDERDOG'}
+          </div>
+        )}
 
         <button
           onClick={() => onVote(candidateAddress, title)}
