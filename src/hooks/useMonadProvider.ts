@@ -6,7 +6,7 @@ import { openPodioAbi } from '../config/abi'
 import { parseEther } from 'viem'
 import { useState, useEffect } from 'react'
 
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x356543D368819052604081206007015460ff1680') as `0x${string}`
+const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x356543d368819052604081206007015460ff1680') as `0x${string}`
 const MONAD_TESTNET_CHAIN_ID = 10143
 
 export function useMonadProvider() {
