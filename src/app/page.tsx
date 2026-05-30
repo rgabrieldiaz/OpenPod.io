@@ -587,10 +587,10 @@ export default function Home() {
             {/* Hero / Concept Explanation */}
             <div className="text-center space-y-4 max-w-2xl mx-auto">
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight leading-none bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-                El Kahoot de los Podcasts Web3
+                Salas de Competencia en Tiempo Real
               </h1>
               <p className="text-sm md:text-base text-slate-400 leading-relaxed">
-                Crea salas de competencia rápidas para podcasts y música. Los oyentes votan por su favorito con micro-apuestas y predicen el ganador en la red ultra-veloz de Monad.
+                Crea torneos instantáneos para tus proyectos, podcasts, música o pitches. Postula contenido, vota con micro-predicciones y gana recompensas en la red ultra-veloz de Monad.
               </p>
             </div>
 
@@ -625,7 +625,7 @@ export default function Home() {
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nombre del Concurso</label>
                         <input
                           type="text"
-                          placeholder="Ej. Podcast Battle de Monad #1"
+                          placeholder="Ej. Torneo de Pitches #1"
                           value={concursoTitle}
                           onChange={(e) => setConcursoTitle(e.target.value)}
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition"
@@ -693,7 +693,7 @@ export default function Home() {
                     </div>
                   </div>
                   <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
-                    Ingresa el PIN numérico de un concurso creado para postular tus podcasts, escuchar las pistas de los participantes, y votar para ganar.
+                    Ingresa el PIN numérico de un concurso creado para postular tus proyectos, escuchar o ver las propuestas de los participantes, y votar para ganar.
                   </p>
                 </div>
 
