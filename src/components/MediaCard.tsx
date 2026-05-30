@@ -139,13 +139,13 @@ export function MediaCard({
 
         <button
           onClick={() => onVote(candidateAddress, title)}
-          disabled={!isConnected || isWrongNetwork || isVoting}
-          className="w-full relative group overflow-hidden rounded-xl bg-gradient-to-r from-purple-600/10 to-indigo-600/10 border border-purple-500/20 hover:border-purple-500/40 py-2.5 text-xs font-bold text-purple-300 transition duration-200 active:scale-95 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2"
+          disabled={isVoting}
+          className="w-full relative overflow-hidden rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25 hover:shadow-[#836EFD]/40 border border-[#836EFD]/40"
         >
           {isVoting ? (
             <>
-              <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
-              <span>Confirming Vote...</span>
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              <span>Confirming on Monad...</span>
             </>
           ) : (
             <>

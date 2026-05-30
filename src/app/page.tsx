@@ -6,10 +6,10 @@ import { formatUnits } from 'viem'
 import { useMonadProvider } from '../hooks/useMonadProvider'
 import { CountdownTimer } from '../components/CountdownTimer'
 import { MediaCard } from '../components/MediaCard'
-import { RacingTrackDashboard } from '../components/RacingTrackDashboard'
 
 export default function Home() {
   const [mounted, setMounted] = useState(false)
+  const [customEndTime, setCustomEndTime] = useState<number | undefined>(undefined)
   
   // Custom hook managing Mozi Wallet and Monad Testnet connections
   const {
@@ -23,7 +23,6 @@ export default function Home() {
     disconnectWallet,
     switchNetwork,
     voteInCompetition,
-    readCompetitionEndTime,
     isVoting,
   } = useMonadProvider()
 
@@ -38,9 +37,8 @@ export default function Home() {
     address,
   })
 
-  // Read competition endTime dynamically using our custom hook helper
+  // Simulated active competition details
   const competitionId = 1n
-  const { endTime: compEndTime } = readCompetitionEndTime(competitionId)
 
   // Mock candidates / projects matching OpenPodio.t.sol test addresses
   const projects = [
@@ -70,9 +68,11 @@ export default function Home() {
     },
   ]
 
-  // Prevent hydration mismatches
+  // Prevent hydration mismatches and initialize dynamic active countdown (00:04:32 remaining)
   useEffect(() => {
     setMounted(true)
+    // Setup active state: current time + 4 minutes and 32 seconds
+    setCustomEndTime(Math.floor(Date.now() / 1000) + 4 * 60 + 32)
   }, [])
 
   const handleRequestFaucet = async () => {
@@ -117,6 +117,17 @@ export default function Home() {
   }
 
   const handleVote = async (candidate: `0x${string}`, title: string) => {
+    // If not connected, trigger wallet connection seamlessly
+    if (!isConnected) {
+      connectWallet()
+      return
+    }
+    // If on wrong network, trigger network switch automatically
+    if (isWrongNetwork) {
+      switchNetwork()
+      return
+    }
+
     setVoteResult(null)
     try {
       const hash = await voteInCompetition(competitionId, candidate)
@@ -147,24 +158,24 @@ export default function Home() {
   }
 
   return (
-    <div className="relative min-h-screen bg-slate-950 overflow-hidden font-sans text-slate-100 selection:bg-purple-500/30 selection:text-purple-200">
+    <div className="relative min-h-screen bg-slate-950 overflow-hidden font-sans text-slate-100 selection:bg-[#836EFD]/30 selection:text-purple-200">
       {/* Background blobs */}
       <div className="absolute -top-[40%] -left-[20%] h-[80%] w-[80%] rounded-full bg-purple-900/5 blur-[150px] pointer-events-none" />
       <div className="absolute -bottom-[30%] -right-[10%] h-[70%] w-[70%] rounded-full bg-violet-800/5 blur-[130px] pointer-events-none" />
 
       {/* Main Layout Container */}
-      <main className="relative z-10 mx-auto max-w-6xl px-6 py-8 md:py-12 flex flex-col min-h-screen justify-between gap-12">
+      <main className="relative z-10 mx-auto max-w-6xl px-6 py-8 md:py-12 flex flex-col min-h-screen justify-between gap-10">
         
         {/* Header */}
         <header className="flex items-center justify-between border-b border-slate-800/40 pb-6">
           <div className="flex items-center gap-3">
-            <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-[#836EFD] to-indigo-500 flex items-center justify-center shadow-lg shadow-[#836EFD]/20">
               <span className="font-black text-white text-lg">O</span>
               <div className="absolute inset-0 rounded-xl border border-white/20 animate-pulse" />
             </div>
             <div>
               <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">OpenPodio</span>
-              <span className="ml-2 rounded-full bg-purple-500/10 px-2.5 py-0.5 text-xs font-semibold text-purple-400 border border-purple-500/20">Web3 Prediction Hub</span>
+              <span className="ml-2 rounded-full bg-[#836EFD]/10 px-2.5 py-0.5 text-xs font-semibold text-[#836EFD] border border-[#836EFD]/20">Web3 Prediction Hub</span>
             </div>
           </div>
 
@@ -188,7 +199,7 @@ export default function Home() {
               <button
                 onClick={connectWallet}
                 disabled={isConnecting}
-                className="relative group overflow-hidden rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition duration-200 hover:shadow-purple-500/40 active:scale-95 disabled:opacity-50"
+                className="relative group overflow-hidden rounded-lg bg-gradient-to-r from-[#836EFD] to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#836EFD]/25 transition duration-200 hover:shadow-[#836EFD]/40 active:scale-95 disabled:opacity-50"
               >
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                 {isConnecting ? 'Connecting...' : 'Connect Mozi Wallet'}
@@ -221,14 +232,9 @@ export default function Home() {
         )}
 
         {/* Dashboard Sections */}
-        <div className="space-y-10">
+        <div className="space-y-12">
           
-          {/* Top Panel: Racing Track Activity HUD */}
-          <section>
-            <RacingTrackDashboard />
-          </section>
-
-          {/* Middle Row: Title, Subtitle, and High-Priority Countdown Timer */}
+          {/* Active Competition Header with Countdown Timer (00:04:32 active state) */}
           <section className="flex flex-col md:flex-row items-center justify-between gap-8 bg-slate-900/10 border border-slate-800/40 rounded-3xl p-6 md:p-8">
             <div className="space-y-2 text-center md:text-left">
               <h2 className="text-2xl md:text-3xl font-extrabold text-white">
@@ -241,14 +247,14 @@ export default function Home() {
 
             {/* Countdown timer with sub-second ticking visual */}
             <div className="flex-shrink-0">
-              <CountdownTimer endTime={compEndTime || 1779999999n} />
+              <CountdownTimer endTime={customEndTime} />
             </div>
           </section>
 
           {/* Grid Panel: Participating Projects Media Cards */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between pb-2">
-              <h3 className="text-lg font-bold text-white tracking-wide uppercase font-mono">
+          <section className="space-y-6">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
+              <h3 className="text-lg font-bold text-white tracking-wide uppercase font-mono text-sm sm:text-base">
                 // Competitor Submissions
               </h3>
               {voteResult && (
@@ -281,12 +287,54 @@ export default function Home() {
             </div>
           </section>
 
+          {/* OpenPodio Reveal Section: Locked blind vote podiums */}
+          <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-6 md:p-8 space-y-6">
+            <div className="text-center md:text-left space-y-1.5">
+              <h3 className="text-md font-bold text-white uppercase font-mono tracking-wider flex items-center gap-2 justify-center md:justify-start">
+                <svg className="w-4 h-4 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                OpenPodio Reveal HUD
+              </h3>
+              <p className="text-xs text-slate-400">
+                Podio protegido por Voto Ciego. Se calculará on-chain al llegar a 00:00:00
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                { rank: '1° Puesto (Ganador)', reward: '80% Creator / 20% Pool split' },
+                { rank: '2° Puesto', reward: 'Finalist' },
+                { rank: '3° Puesto', reward: 'Finalist' },
+              ].map((pod, i) => (
+                <div 
+                  key={i} 
+                  className="rounded-2xl bg-slate-950/60 border border-slate-900 p-5 flex items-center justify-between group relative overflow-hidden"
+                >
+                  <div className="space-y-1 z-10">
+                    <p className="text-xs font-mono font-bold text-slate-500 uppercase">{pod.rank}</p>
+                    <p className="text-sm font-extrabold text-slate-300">LOCKED_BLIND_STATE</p>
+                    <p className="text-[10px] text-slate-600 font-mono">{pod.reward}</p>
+                  </div>
+                  
+                  <div className="h-10 w-10 rounded-full bg-slate-900 border border-slate-800/80 flex items-center justify-center text-slate-600 z-10">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  {/* Subtle hover effect background */}
+                  <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none" />
+                </div>
+              ))}
+            </div>
+          </section>
+
           {/* Faucet Support Area */}
           {isConnected && !isWrongNetwork && (
             <section className="rounded-3xl border border-slate-800 bg-slate-900/30 p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
               <div className="space-y-1">
                 <h4 className="text-md font-bold text-white flex items-center gap-2">
-                  <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 text-[#836EFD]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 00-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                   </svg>
                   Monad Testnet Faucet Portal
@@ -307,11 +355,11 @@ export default function Home() {
                 <button
                   onClick={handleRequestFaucet}
                   disabled={faucetLoading}
-                  className="rounded-xl bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 px-5 py-3 text-xs font-bold text-purple-400 transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
+                  className="rounded-xl bg-[#836EFD]/10 border border-[#836EFD]/30 hover:bg-[#836EFD]/20 px-5 py-3 text-xs font-bold text-[#836EFD] transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
                 >
                   {faucetLoading ? (
                     <>
-                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-[#836EFD] border-t-transparent" />
                       <span>Requesting 1 MONAD...</span>
                     </>
                   ) : (
