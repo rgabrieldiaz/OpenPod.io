@@ -35,8 +35,9 @@ contract OpenPodioTest is Test {
         vm.prank(host);
         uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Una descripcion de prueba");
         
-        assertEq(newId, 1);
+        assertTrue(newId >= 100000 && newId <= 999999);
         assertEq(openPodio.competitionCount(), 1);
+        assertEq(openPodio.latestCompetitionId(), newId);
 
         (
             uint256 id,
@@ -51,7 +52,7 @@ contract OpenPodioTest is Test {
             OpenPodio.State state
         ) = openPodio.competitions(newId);
 
-        assertEq(id, 1);
+        assertEq(id, newId);
         assertEq(title, "Demo Hackathon #1");
         assertEq(description, "Una descripcion de prueba");
         assertEq(compHost, host);

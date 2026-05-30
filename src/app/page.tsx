@@ -29,6 +29,7 @@ export default function Home() {
     resolveCompetition,
     claimRewards,
     useCompetitionCount,
+    useLatestCompetitionId,
     useCompetitionDetails,
     useCandidates,
     useCandidatesMetadata,
@@ -39,17 +40,18 @@ export default function Home() {
 
   // Find current/latest competition ID
   const { count: compCount, refetch: refetchCompCount } = useCompetitionCount()
+  const { latestId, refetch: refetchLatestId } = useLatestCompetitionId()
   const [selectedCompId, setSelectedCompId] = useState<bigint | null>(null)
   const [searchPin, setSearchPin] = useState('')
   const [showLanding, setShowLanding] = useState(true)
 
   useEffect(() => {
-    if (compCount && selectedCompId === null) {
-      setSelectedCompId(compCount)
+    if (latestId && selectedCompId === null) {
+      setSelectedCompId(latestId)
     }
-  }, [compCount, selectedCompId])
+  }, [latestId, selectedCompId])
 
-  const currentCompId = selectedCompId || compCount || 0n
+  const currentCompId = selectedCompId || latestId || 0n
 
   const handleLoadPin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -261,13 +263,16 @@ export default function Home() {
         txHash: hash,
       })
 
-      // Predict the next ID immediately for responsive transition
-      const nextId = (compCount || 0n) + 1n
-      setSelectedCompId(nextId)
-      setShowLanding(false)
+      // Fetch the generated 6-digit PIN from the contract
+      const latestResult = await refetchLatestId()
+      const newPin = latestResult.data as bigint | undefined
+      if (newPin) {
+        setSelectedCompId(newPin)
+        setShowLanding(false)
+        refetchCompDetails()
+        refetchCandidates()
+      }
       refetchCompCount()
-      refetchCompDetails()
-      refetchCandidates()
     } catch (err: any) {
       setCreateResult({
         success: false,
@@ -540,10 +545,10 @@ export default function Home() {
                 <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">PIN CONCURSO:</span>
                 <input
                   type="number"
-                  placeholder="Ej. 1"
+                  placeholder="Ej. 123456"
                   value={searchPin}
                   onChange={(e) => setSearchPin(e.target.value)}
-                  className="w-16 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
+                  className="w-24 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
                 />
                 <button
                   type="submit"
@@ -686,11 +691,9 @@ export default function Home() {
                         )}
                       </button>
 
-                      {compCount !== undefined && (
-                        <p className="text-[10px] text-center text-slate-500 font-mono">
-                          PIN del próximo concurso: <span className="text-[#836EFD] font-bold">#{(compCount + 1n).toString()}</span>
-                        </p>
-                      )}
+                      <p className="text-[10px] text-center text-[#836EFD] font-mono font-bold">
+                        Se generará un PIN único de 6 dígitos en la blockchain
+                      </p>
                     </form>
                   ) : (
                     <div className="space-y-3 text-center py-2">
@@ -753,7 +756,7 @@ export default function Home() {
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">PIN del Concurso</label>
                       <input
                         type="number"
-                        placeholder="Ej. 1"
+                        placeholder="Ej. 123456"
                         value={searchPin}
                         onChange={(e) => setSearchPin(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-slate-100 font-mono font-extrabold text-lg focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 transition tracking-widest"
@@ -771,16 +774,16 @@ export default function Home() {
                       </svg>
                     </button>
 
-                    {compCount !== undefined && compCount > 0n && (
+                    {latestId !== undefined && latestId > 0n && (
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedCompId(compCount)
+                          setSelectedCompId(latestId)
                           setShowLanding(false)
                         }}
                         className="w-full text-center text-[10px] text-slate-500 hover:text-cyan-400 font-mono transition-colors"
                       >
-                        O ingresar al último concurso activo: <span className="text-cyan-500 underline font-bold">PIN #{compCount.toString()}</span>
+                        O ingresar al último concurso activo: <span className="text-cyan-500 underline font-bold">PIN #{latestId.toString()}</span>
                       </button>
                     )}
                   </form>

@@ -161,6 +161,21 @@ export function useMonadProvider() {
     }
   }
 
+  // Hook for reading the latest competition ID (PIN)
+  const useLatestCompetitionId = () => {
+    const { data, isLoading, refetch } = useReadContract({
+      address: CONTRACT_ADDRESS,
+      abi: openPodioAbi,
+      functionName: 'latestCompetitionId',
+    })
+
+    return {
+      latestId: data as bigint | undefined,
+      isLoading,
+      refetch,
+    }
+  }
+
   // Hook for reading competition details
   const useCompetitionDetails = (competitionId: bigint) => {
     const { data, isLoading, refetch } = useReadContract({
@@ -297,6 +312,7 @@ export function useMonadProvider() {
     resolveCompetition,
     claimRewards,
     useCompetitionCount,
+    useLatestCompetitionId,
     useCompetitionDetails,
     useCandidates,
     useCandidatesMetadata,

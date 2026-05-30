@@ -37,6 +37,9 @@ contract OpenPodio {
     // Competition counter
     uint256 public competitionCount;
 
+    // Tracks the ID of the latest competition created
+    uint256 public latestCompetitionId;
+
     // Mapping from Competition ID to its details
     mapping(uint256 => Competition) public competitions;
 
@@ -75,23 +78,28 @@ contract OpenPodio {
     event CompetitionResolved(uint256 indexed competitionId, address indexed winner, uint256 totalPool);
     event RewardClaimed(uint256 indexed competitionId, address indexed voter, uint256 amount);
 
-    /**
-     * @notice Creates a new decentralized audio/podcast competition.
-     * @param _title Title of the podcast episode/competition.
-     */
     function createConcurso(string calldata _title, string calldata _description) external returns (uint256) {
         competitionCount++;
-        uint256 newId = competitionCount;
         
-        Competition storage comp = competitions[newId];
-        comp.id = newId;
+        // Generate a 6-digit pseudo-random PIN (100000 to 999999)
+        uint256 pin = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, competitionCount))) % 900000 + 100000;
+        
+        // Handle collision (extremely rare, but guarantees uniqueness)
+        while (competitions[pin].id != 0) {
+            pin = (pin + 1) % 900000 + 100000;
+        }
+        
+        latestCompetitionId = pin;
+        
+        Competition storage comp = competitions[pin];
+        comp.id = pin;
         comp.title = _title;
         comp.description = _description;
         comp.host = msg.sender;
         comp.state = State.Upcoming;
 
-        emit ConcursoCreated(newId, _title, msg.sender);
-        return newId;
+        emit ConcursoCreated(pin, _title, msg.sender);
+        return pin;
     }
 
     /**

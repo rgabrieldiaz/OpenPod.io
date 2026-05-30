@@ -125,6 +125,19 @@ export const openPodioAbi = [
   },
   {
     "type": "function",
+    "name": "latestCompetitionId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "competitions",
     "inputs": [
       {
