@@ -47,6 +47,8 @@ export default function Home() {
   const [selectedCompId, setSelectedCompId] = useState<bigint | null>(null)
   const [searchPin, setSearchPin] = useState('')
   const [showLanding, setShowLanding] = useState(true)
+  const [justCreatedPin, setJustCreatedPin] = useState<bigint | null>(null)
+  const [dashboardLoading, setDashboardLoading] = useState(false)
 
   useEffect(() => {
     if (latestId && selectedCompId === null) {
@@ -252,6 +254,7 @@ export default function Home() {
         message: '¡Petición de creación enviada! Esperando confirmación en blockchain...',
         txHash: hash,
       })
+      const savedTitle = concursoTitle
       setConcursoTitle('')
       setConcursoDescription('')
       
@@ -312,30 +315,28 @@ export default function Home() {
         }
       }
       
+      // ALWAYS navigate to the dashboard after a successful transaction
+      const resolvedPin = newPin || 0n
+      setSelectedCompId(resolvedPin)
+      setJustCreatedPin(resolvedPin)
+      setDashboardLoading(true)
       setCreateResult({
         success: true,
-        message: '¡Concurso creado y confirmado con éxito!',
+        message: `¡Concurso "${savedTitle}" creado con éxito! PIN: ${resolvedPin.toString()}`,
         txHash: hash,
       })
 
-      if (newPin) {
-        setSelectedCompId(newPin)
-        setShowLanding(false)
-        refetchCompDetails()
-        refetchCandidates()
-      } else {
-        // Fallback: Fetch the generated 6-digit PIN from the contract state
-        const latestResult = await refetchLatestId()
-        const fetchedPin = latestResult.data as bigint | undefined
-        if (fetchedPin) {
-          setSelectedCompId(fetchedPin)
-          setShowLanding(false)
-          refetchCompDetails()
-          refetchCandidates()
-        }
-      }
-      refetchCompCount()
-      refetchLatestId()
+      // Navigate immediately
+      setShowLanding(false)
+
+      // Allow React to re-render and hooks to re-query with new selectedCompId
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      await refetchCompCount()
+      await refetchLatestId()
+      await refetchCompDetails()
+      await refetchCandidates()
+      setDashboardLoading(false)
+
     } catch (err: any) {
       setCreateResult({
         success: false,
@@ -578,7 +579,7 @@ export default function Home() {
         <header className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-800/40 pb-6 gap-4">
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => setShowLanding(true)}
+              onClick={() => { setShowLanding(true); setJustCreatedPin(null); setDashboardLoading(false); setCreateResult(null) }}
               className="flex items-center gap-3 text-left focus:outline-none hover:opacity-90 transition-opacity"
             >
               <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-[#836EFD] to-indigo-500 flex items-center justify-center shadow-lg shadow-[#836EFD]/20">
@@ -595,7 +596,7 @@ export default function Home() {
           {!showLanding ? (
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setShowLanding(true)}
+                onClick={() => { setShowLanding(true); setJustCreatedPin(null); setDashboardLoading(false); setCreateResult(null) }}
                 className="flex items-center gap-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800/80 px-3.5 py-2 text-xs font-bold text-slate-300 transition active:scale-95 shadow-sm"
               >
                 <svg className="w-4.5 h-4.5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -858,8 +859,32 @@ export default function Home() {
         ) : (
           <div className="space-y-12">
 
+          {/* Loading state after just creating a contest */}
+          {dashboardLoading && justCreatedPin !== null && (
+            <section className="rounded-3xl border border-[#836EFD]/30 bg-gradient-to-br from-slate-950 via-purple-950/20 to-slate-950 p-8 md:p-12 text-center space-y-6 animate-fadeIn">
+              <div className="w-20 h-20 rounded-full bg-[#836EFD]/10 flex items-center justify-center text-[#836EFD] mx-auto animate-pulse">
+                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-white tracking-tight">Preparando tu Sala de Competencia</h3>
+                <p className="text-sm text-slate-400 max-w-md mx-auto">Tu concurso fue creado exitosamente. Estamos cargando el panel de gestión...</p>
+              </div>
+              {justCreatedPin > 0n && (
+                <div className="inline-flex items-center gap-3 bg-slate-950/80 border border-[#836EFD]/30 rounded-2xl px-6 py-4">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tu PIN:</span>
+                  <span className="text-3xl font-black text-[#836EFD] font-mono tracking-[0.2em]">{justCreatedPin.toString().padStart(6, '0')}</span>
+                </div>
+              )}
+              <div className="flex justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-3 border-[#836EFD] border-t-transparent"></div>
+              </div>
+            </section>
+          )}
+
           {/* State: Competition PIN does not exist */}
-          {currentCompId > 0n && !doesCompExist && (
+          {!dashboardLoading && currentCompId > 0n && !doesCompExist && (
             <section className="rounded-3xl border border-slate-800 bg-slate-900/20 p-8 text-center space-y-4">
               <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400 mx-auto">
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -917,6 +942,52 @@ export default function Home() {
                   Conecta tu billetera arriba para poder crear una nueva competencia.
                 </div>
               )}
+            </section>
+          )}
+
+          {/* Prominent PIN Banner when a contest was just created */}
+          {justCreatedPin !== null && doesCompExist && !dashboardLoading && (
+            <section className="rounded-3xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/30 via-slate-950 to-emerald-950/30 p-6 md:p-8 relative overflow-hidden animate-fadeIn">
+              <div className="absolute top-0 left-0 h-[2px] w-full bg-gradient-to-r from-transparent via-emerald-500/60 to-transparent" />
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-emerald-300">¡Sala Creada Exitosamente!</h4>
+                    <p className="text-xs text-slate-400">Comparte este PIN con los participantes para que se unan a la competencia.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-slate-950/80 border border-emerald-500/20 rounded-2xl px-5 py-3 flex items-center gap-3">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PIN:</span>
+                    <span className="text-2xl font-black text-emerald-400 font-mono tracking-[0.15em]">{justCreatedPin.toString().padStart(6, '0')}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(justCreatedPin.toString().padStart(6, '0'))
+                    }}
+                    className="rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-3 text-emerald-400 transition active:scale-95"
+                    title="Copiar PIN"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setJustCreatedPin(null)}
+                    className="rounded-xl bg-slate-800/60 hover:bg-slate-700 border border-slate-700 px-3 py-3 text-slate-400 transition active:scale-95"
+                    title="Cerrar"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </section>
           )}
 
