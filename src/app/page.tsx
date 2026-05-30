@@ -1,6 +1,6 @@
 'use client'
 
-import { useBalance } from 'wagmi'
+import { useBalance, usePublicClient } from 'wagmi'
 import { useState, useEffect } from 'react'
 import { formatUnits } from 'viem'
 import { useMonadProvider } from '../hooks/useMonadProvider'
@@ -10,6 +10,7 @@ import { MediaCard } from '../components/MediaCard'
 export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [customEndTime, setCustomEndTime] = useState<number | undefined>(undefined)
+  const publicClient = usePublicClient()
   
   // Custom hook managing Mozi Wallet and Monad Testnet connections
   const {
@@ -40,6 +41,7 @@ export default function Home() {
   const { count: compCount, refetch: refetchCompCount } = useCompetitionCount()
   const [selectedCompId, setSelectedCompId] = useState<bigint | null>(null)
   const [searchPin, setSearchPin] = useState('')
+  const [showLanding, setShowLanding] = useState(true)
 
   useEffect(() => {
     if (compCount && selectedCompId === null) {
@@ -56,6 +58,7 @@ export default function Home() {
       const pin = BigInt(searchPin)
       if (pin <= 0n) return
       setSelectedCompId(pin)
+      setShowLanding(false)
       setSearchPin('')
     } catch {
       // ignore
@@ -231,15 +234,29 @@ export default function Home() {
       const hash = await createConcurso(concursoTitle)
       setCreateResult({
         success: true,
-        message: '¡Petición de creación enviada! Esperando confirmación...',
+        message: '¡Petición de creación enviada! Esperando confirmación en blockchain...',
         txHash: hash,
       })
       setConcursoTitle('')
-      setTimeout(() => {
-        refetchCompCount()
-        refetchCompDetails()
-        refetchCandidates()
-      }, 3000)
+      
+      // Wait for confirmation on the blockchain
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash })
+      }
+      
+      setCreateResult({
+        success: true,
+        message: '¡Concurso creado y confirmado con éxito!',
+        txHash: hash,
+      })
+
+      // Predict the next ID immediately for responsive transition
+      const nextId = (compCount || 0n) + 1n
+      setSelectedCompId(nextId)
+      setShowLanding(false)
+      refetchCompCount()
+      refetchCompDetails()
+      refetchCandidates()
     } catch (err: any) {
       setCreateResult({
         success: false,
@@ -262,13 +279,22 @@ export default function Home() {
         message: '¡Postulación enviada con éxito! Esperando confirmación...',
         txHash: hash,
       })
+      
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash })
+      }
+
+      setPostulateResult({
+        success: true,
+        message: '¡Postulación confirmada con éxito!',
+        txHash: hash,
+      })
       setProjectName('')
       setCreatorName('')
       setMediaUrl('')
-      setTimeout(() => {
-        refetchCandidates()
-        refetchCandidatesMetadata()
-      }, 3000)
+      
+      refetchCandidates()
+      refetchCandidatesMetadata()
     } catch (err: any) {
       setPostulateResult({
         success: false,
@@ -292,9 +318,18 @@ export default function Home() {
         message: '¡Periodo de votación iniciado! Esperando confirmación...',
         txHash: hash,
       })
-      setTimeout(() => {
-        refetchCompDetails()
-      }, 3000)
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash })
+      }
+
+      setStartVotingResult({
+        success: true,
+        message: '¡Periodo de votación confirmado y activo!',
+        txHash: hash,
+      })
+
+      refetchCompDetails()
     } catch (err: any) {
       setStartVotingResult({
         success: false,
@@ -319,14 +354,23 @@ export default function Home() {
       const hash = await voteInCompetition(currentCompId, candidate)
       setVoteResult({
         success: true,
+        message: `¡Voto enviado por ${title}! Esperando confirmación...`,
+        txHash: hash,
+      })
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash })
+      }
+
+      setVoteResult({
+        success: true,
         message: `¡Votado con éxito por ${title}!`,
         txHash: hash,
       })
-      setTimeout(() => {
-        refetchBalance()
-        refetchCompDetails()
-        refetchVoteSelection()
-      }, 2000)
+
+      refetchBalance()
+      refetchCompDetails()
+      refetchVoteSelection()
     } catch (err: any) {
       setVoteResult({
         success: false,
@@ -342,12 +386,21 @@ export default function Home() {
       const hash = await resolveCompetition(currentCompId)
       setResolveResult({
         success: true,
+        message: '¡Resolución enviada! Esperando confirmación...',
+        txHash: hash,
+      })
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash })
+      }
+
+      setResolveResult({
+        success: true,
         message: '¡Competencia resuelta con éxito en Monad!',
         txHash: hash,
       })
-      setTimeout(() => {
-        refetchCompDetails()
-      }, 2000)
+
+      refetchCompDetails()
     } catch (err: any) {
       setResolveResult({
         success: false,
@@ -365,13 +418,22 @@ export default function Home() {
       const hash = await claimRewards(currentCompId)
       setClaimResult({
         success: true,
+        message: '¡Reclamación enviada! Esperando confirmación...',
+        txHash: hash,
+      })
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash })
+      }
+
+      setClaimResult({
+        success: true,
         message: '¡Recompensa reclamada con éxito!',
         txHash: hash,
       })
-      setTimeout(() => {
-        refetchBalance()
-        refetchClaimed()
-      }, 2000)
+
+      refetchBalance()
+      refetchClaimed()
     } catch (err: any) {
       setClaimResult({
         success: false,
@@ -420,33 +482,51 @@ export default function Home() {
         {/* Header */}
         <header className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-800/40 pb-6 gap-4">
           <div className="flex items-center gap-3">
-            <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-[#836EFD] to-indigo-500 flex items-center justify-center shadow-lg shadow-[#836EFD]/20">
-              <span className="font-black text-white text-lg">O</span>
-              <div className="absolute inset-0 rounded-xl border border-white/20 animate-pulse" />
-            </div>
-            <div>
-              <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">OpenPod.io</span>
-              <span className="ml-2 rounded-full bg-[#836EFD]/10 px-2.5 py-0.5 text-xs font-semibold text-[#836EFD] border border-[#836EFD]/20">Plataforma de Predicciones Web3</span>
-            </div>
+            <button 
+              onClick={() => setShowLanding(true)}
+              className="flex items-center gap-3 text-left focus:outline-none hover:opacity-90 transition-opacity"
+            >
+              <div className="relative h-10 w-10 rounded-xl bg-gradient-to-tr from-[#836EFD] to-indigo-500 flex items-center justify-center shadow-lg shadow-[#836EFD]/20">
+                <span className="font-black text-white text-lg">O</span>
+                <div className="absolute inset-0 rounded-xl border border-white/20 animate-pulse" />
+              </div>
+              <div>
+                <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent block">OpenPod.io</span>
+              </div>
+            </button>
           </div>
 
-          {/* PIN Search Bar */}
-          <form onSubmit={handleLoadPin} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1.5 pl-3">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">PIN CONCURSO:</span>
-            <input
-              type="number"
-              placeholder="Ej. 1"
-              value={searchPin}
-              onChange={(e) => setSearchPin(e.target.value)}
-              className="w-16 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
-            />
-            <button
-              type="submit"
-              className="rounded-xl bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border border-[#836EFD]/30 px-3.5 py-1.5 text-xs font-bold text-[#836EFD] transition active:scale-95 whitespace-nowrap"
-            >
-              Cargar PIN
-            </button>
-          </form>
+          {/* Conditionally show navigation controls outside landing page */}
+          {!showLanding ? (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowLanding(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800/80 px-3.5 py-2 text-xs font-bold text-slate-300 transition active:scale-95 shadow-sm"
+              >
+                <svg className="w-4.5 h-4.5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <span>Inicio</span>
+              </button>
+
+              <form onSubmit={handleLoadPin} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1.5 pl-3">
+                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">PIN CONCURSO:</span>
+                <input
+                  type="number"
+                  placeholder="Ej. 1"
+                  value={searchPin}
+                  onChange={(e) => setSearchPin(e.target.value)}
+                  className="w-16 bg-transparent border-0 text-slate-100 font-mono font-bold text-sm focus:outline-none focus:ring-0 p-0 text-center"
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[#836EFD]/10 hover:bg-[#836EFD]/20 border border-[#836EFD]/30 px-3.5 py-1.5 text-xs font-bold text-[#836EFD] transition active:scale-95 whitespace-nowrap"
+                >
+                  Cargar PIN
+                </button>
+              </form>
+            </div>
+          ) : null}
 
           <div>
             {isConnected ? (
@@ -500,8 +580,179 @@ export default function Home() {
           </div>
         )}
 
-        {/* Dashboard Sections */}
-        <div className="space-y-12">
+        {/* Main Content Area */}
+        {showLanding ? (
+          // Onboarding Landing Page
+          <div className="flex-grow flex flex-col justify-center py-6 md:py-10 space-y-10 animate-fadeIn">
+            {/* Hero / Concept Explanation */}
+            <div className="text-center space-y-4 max-w-2xl mx-auto">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight leading-none bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                El Kahoot de los Podcasts Web3
+              </h1>
+              <p className="text-sm md:text-base text-slate-400 leading-relaxed">
+                Crea salas de competencia rápidas para podcasts y música. Los oyentes votan por su favorito con micro-apuestas y predicen el ganador en la red ultra-veloz de Monad.
+              </p>
+            </div>
+
+            {/* Split Grid */}
+            <div className="grid gap-8 md:grid-cols-2 max-w-4xl mx-auto w-full px-2">
+              
+              {/* Left Column: Hostear un Concurso (Violet Theme) */}
+              <div className="relative rounded-3xl border border-purple-500/20 bg-slate-900/10 p-6 md:p-8 space-y-6 flex flex-col justify-between overflow-hidden shadow-xl shadow-purple-500/5 group hover:border-purple-500/30 transition-all duration-300">
+                <div className="absolute -top-12 -left-12 w-24 h-24 rounded-full bg-purple-500/10 blur-xl pointer-events-none group-hover:bg-purple-500/15 transition-all duration-300" />
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-white">Hostear un Concurso</h2>
+                      <p className="text-xs text-purple-400/80 font-bold uppercase tracking-wider font-mono">Panel del Host</p>
+                    </div>
+                  </div>
+                  <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
+                    Crea una nueva sala de competencia en la blockchain. Podrás recibir postulaciones, iniciar la votación y resolver los resultados on-chain.
+                  </p>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t border-slate-800/40">
+                  {isConnected ? (
+                    <form onSubmit={handleCreateConcurso} className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nombre del Concurso</label>
+                        <input
+                          type="text"
+                          placeholder="Ej. Podcast Battle de Monad #1"
+                          value={concursoTitle}
+                          onChange={(e) => setConcursoTitle(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition"
+                          required
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={createLoading}
+                        className="w-full rounded-xl bg-gradient-to-r from-[#836EFD] to-indigo-600 hover:from-[#836EFD]/95 hover:to-indigo-600/95 py-3 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/25"
+                      >
+                        {createLoading ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            <span>Creando Concurso...</span>
+                          </>
+                        ) : (
+                          <span>Crear Sala de Concurso</span>
+                        )}
+                      </button>
+
+                      {compCount !== undefined && (
+                        <p className="text-[10px] text-center text-slate-500 font-mono">
+                          PIN del próximo concurso: <span className="text-[#836EFD] font-bold">#{(compCount + 1n).toString()}</span>
+                        </p>
+                      )}
+                    </form>
+                  ) : (
+                    <div className="space-y-3 text-center py-2">
+                      <p className="text-xs text-slate-500">Conecta tu billetera para registrar un concurso en la blockchain.</p>
+                      <button
+                        onClick={connectWallet}
+                        className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-3 text-xs font-black text-white transition duration-200 active:scale-95 shadow-md shadow-[#836EFD]/20"
+                      >
+                        Conectar Billetera Mozi
+                      </button>
+                    </div>
+                  )}
+
+                  {createResult && (
+                    <div className={`p-3 rounded-xl text-xs border ${
+                      createResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                    }`}>
+                      {createResult.message}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Unirse a un Concurso (Cyan Theme) */}
+              <div className="relative rounded-3xl border border-cyan-500/20 bg-slate-900/10 p-6 md:p-8 space-y-6 flex flex-col justify-between overflow-hidden shadow-xl shadow-cyan-500/5 group hover:border-cyan-500/30 transition-all duration-300">
+                <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-cyan-500/10 blur-xl pointer-events-none group-hover:bg-cyan-500/15 transition-all duration-300" />
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-white">Unirse a un Concurso</h2>
+                      <p className="text-xs text-cyan-400/80 font-bold uppercase tracking-wider font-mono">Panel del Votante / Creador</p>
+                    </div>
+                  </div>
+                  <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
+                    Ingresa el PIN numérico de un concurso creado para postular tus podcasts, escuchar las pistas de los participantes, y votar para ganar.
+                  </p>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t border-slate-800/40">
+                  <form onSubmit={(e) => {
+                    e.preventDefault()
+                    if (!searchPin) return
+                    try {
+                      const pin = BigInt(searchPin)
+                      if (pin <= 0n) return
+                      setSelectedCompId(pin)
+                      setShowLanding(false) // Transition to dashboard
+                      setSearchPin('')
+                    } catch {
+                      // ignore
+                    }
+                  }} className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">PIN del Concurso</label>
+                      <input
+                        type="number"
+                        placeholder="Ej. 1"
+                        value={searchPin}
+                        onChange={(e) => setSearchPin(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-slate-100 font-mono font-extrabold text-lg focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 transition tracking-widest"
+                        required
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 py-3 text-xs font-black text-white transition duration-200 active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20"
+                    >
+                      <span>Ingresar a la Sala</span>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      </svg>
+                    </button>
+
+                    {compCount !== undefined && compCount > 0n && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCompId(compCount)
+                          setShowLanding(false)
+                        }}
+                        className="w-full text-center text-[10px] text-slate-500 hover:text-cyan-400 font-mono transition-colors"
+                      >
+                        O ingresar al último concurso activo: <span className="text-cyan-500 underline font-bold">PIN #{compCount.toString()}</span>
+                      </button>
+                    )}
+                  </form>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-12">
 
           {/* State: Competition PIN does not exist */}
           {currentCompId > 0n && !doesCompExist && (
@@ -1169,7 +1420,8 @@ export default function Home() {
             </section>
           )}
 
-        </div>
+          </div>
+        )}
 
         {/* Footer */}
         <footer className="border-t border-slate-800/40 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
