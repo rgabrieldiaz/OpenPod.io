@@ -50,7 +50,7 @@ export function useMonadProvider() {
   })
 
   // Expose createConcurso function
-  const createConcurso = async (title: string) => {
+  const createConcurso = async (title: string, description: string) => {
     if (!isConnected) throw new Error('Wallet not connected')
     if (isWrongNetwork) throw new Error('Wrong network. Please switch to Monad Testnet.')
 
@@ -60,12 +60,18 @@ export function useMonadProvider() {
       address: CONTRACT_ADDRESS,
       abi: openPodioAbi,
       functionName: 'createConcurso',
-      args: [title],
+      args: [title, description],
     })
   }
 
   // Expose registerParticipant function
-  const registerParticipant = async (competitionId: bigint, projectName: string, creatorName: string, mediaUrl: string) => {
+  const registerParticipant = async (
+    competitionId: bigint,
+    candidateAddress: `0x${string}`,
+    projectName: string,
+    creatorName: string,
+    mediaUrl: string
+  ) => {
     if (!isConnected) throw new Error('Wallet not connected')
     if (isWrongNetwork) throw new Error('Wrong network. Please switch to Monad Testnet.')
 
@@ -75,7 +81,7 @@ export function useMonadProvider() {
       address: CONTRACT_ADDRESS,
       abi: openPodioAbi,
       functionName: 'registerParticipant',
-      args: [competitionId, projectName, creatorName, mediaUrl],
+      args: [competitionId, candidateAddress, projectName, creatorName, mediaUrl],
     })
   }
 
@@ -164,17 +170,18 @@ export function useMonadProvider() {
       args: [competitionId],
     })
 
-    // competitions returns: [id, title, host, endTime, totalPool, winner, rewardPerVoter, resolved, state]
+    // competitions returns: [id, title, description, host, endTime, totalPool, winner, rewardPerVoter, resolved, state]
     const details = data ? {
       id: (data as any)[0] as bigint,
       title: (data as any)[1] as string,
-      host: (data as any)[2] as string,
-      endTime: (data as any)[3] as bigint,
-      totalPool: (data as any)[4] as bigint,
-      winner: (data as any)[5] as string,
-      rewardPerVoter: (data as any)[6] as bigint,
-      resolved: (data as any)[7] as boolean,
-      state: (data as any)[8] as number, // 0 = Upcoming, 1 = Active, 2 = Ended
+      description: (data as any)[2] as string,
+      host: (data as any)[3] as string,
+      endTime: (data as any)[4] as bigint,
+      totalPool: (data as any)[5] as bigint,
+      winner: (data as any)[6] as string,
+      rewardPerVoter: (data as any)[7] as bigint,
+      resolved: (data as any)[8] as boolean,
+      state: (data as any)[9] as number, // 0 = Upcoming, 1 = Active, 2 = Ended
     } : undefined
 
     return {

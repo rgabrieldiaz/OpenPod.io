@@ -145,6 +145,11 @@ export const openPodioAbi = [
         "internalType": "string"
       },
       {
+        "name": "description",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
         "name": "host",
         "type": "address",
         "internalType": "address"
@@ -188,6 +193,11 @@ export const openPodioAbi = [
     "inputs": [
       {
         "name": "_title",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "_description",
         "type": "string",
         "internalType": "string"
       }
@@ -300,6 +310,11 @@ export const openPodioAbi = [
         "name": "_competitionId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "_candidate",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "_projectName",

@@ -61,7 +61,23 @@ export function MediaCard({
   highlightOdds,
   status = 'active',
 }: MediaCardProps) {
-  const mediaType = detectMediaType(src);
+  // Support custom format: type::url
+  let mediaUrl = src;
+  let mediaType: 'youtube' | 'video' | 'audio' | 'image' | 'unknown' = 'unknown';
+
+  if (src.includes('::')) {
+    const parts = src.split('::');
+    const typePart = parts[0].toLowerCase();
+    mediaUrl = parts.slice(1).join('::');
+    
+    if (typePart === 'youtube') mediaType = 'youtube';
+    else if (typePart === 'video') mediaType = 'video';
+    else if (typePart === 'audio') mediaType = 'audio';
+    else if (typePart === 'image') mediaType = 'image';
+    else mediaType = detectMediaType(mediaUrl);
+  } else {
+    mediaType = detectMediaType(src);
+  }
 
   return (
     <div className="relative overflow-hidden rounded-3xl bg-slate-900/40 backdrop-blur-xl border border-white/5 p-6 shadow-2xl flex flex-col justify-between h-full group hover:border-purple-500/20 transition-all duration-300">
@@ -73,7 +89,7 @@ export function MediaCard({
         {/* Media Embed Area */}
         <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center border border-slate-800/80">
           {mediaType === 'youtube' && (() => {
-            const embedUrl = getYouTubeEmbedUrl(src);
+            const embedUrl = getYouTubeEmbedUrl(mediaUrl);
             return embedUrl ? (
               <iframe
                 src={embedUrl}
@@ -89,7 +105,7 @@ export function MediaCard({
 
           {mediaType === 'video' && (
             <video
-              src={src}
+              src={mediaUrl}
               className="w-full h-full object-cover rounded-lg"
               controls
             />
@@ -103,7 +119,7 @@ export function MediaCard({
               </div>
               
               <audio
-                src={src}
+                src={mediaUrl}
                 className="w-full max-w-[220px] h-8 opacity-80 hover:opacity-100 transition-opacity"
                 controls
               />
@@ -117,7 +133,7 @@ export function MediaCard({
           {mediaType === 'image' && (
             <div className="relative w-full h-full overflow-hidden group/image">
               <img
-                src={src}
+                src={mediaUrl}
                 alt={title}
                 className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover/image:scale-105"
               />
@@ -134,9 +150,9 @@ export function MediaCard({
               <svg className="w-8 h-8 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
-              <p className="text-xs font-mono break-all px-4">{src}</p>
+              <p className="text-xs font-mono break-all px-4">{mediaUrl}</p>
               <a
-                href={src}
+                href={mediaUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-2 text-[10px] text-[#836EFD] underline font-bold"

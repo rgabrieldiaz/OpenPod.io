@@ -120,14 +120,24 @@ export default function Home() {
 
   // Form States
   const [concursoTitle, setConcursoTitle] = useState('')
+  const [concursoDescription, setConcursoDescription] = useState('')
   const [createLoading, setCreateLoading] = useState(false)
   const [createResult, setCreateResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
 
   const [projectName, setProjectName] = useState('')
   const [creatorName, setCreatorName] = useState('')
   const [mediaUrl, setMediaUrl] = useState('')
+  const [candidateWallet, setCandidateWallet] = useState('')
+  const [mediaType, setMediaType] = useState('youtube')
   const [postulateLoading, setPostulateLoading] = useState(false)
   const [postulateResult, setPostulateResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
+
+  // Default candidate wallet to logged in address
+  useEffect(() => {
+    if (address) {
+      setCandidateWallet(address)
+    }
+  }, [address])
 
   const [votingDuration, setVotingDuration] = useState('10') // default 10 mins
   const [startVotingLoading, setStartVotingLoading] = useState(false)
@@ -231,13 +241,14 @@ export default function Home() {
     setCreateLoading(true)
     setCreateResult(null)
     try {
-      const hash = await createConcurso(concursoTitle)
+      const hash = await createConcurso(concursoTitle, concursoDescription)
       setCreateResult({
         success: true,
         message: '¡Petición de creación enviada! Esperando confirmación en blockchain...',
         txHash: hash,
       })
       setConcursoTitle('')
+      setConcursoDescription('')
       
       // Wait for confirmation on the blockchain
       if (publicClient) {
@@ -269,11 +280,25 @@ export default function Home() {
 
   const handlePostulateContent = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!projectName || !creatorName || !mediaUrl) return
+    if (!projectName || !creatorName || !mediaUrl || !candidateWallet) return
+    if (!candidateWallet.startsWith('0x')) {
+      setPostulateResult({
+        success: false,
+        message: 'La dirección de la wallet del competidor debe comenzar con 0x y ser válida.',
+      })
+      return
+    }
     setPostulateLoading(true)
     setPostulateResult(null)
     try {
-      const hash = await registerParticipant(currentCompId, projectName, creatorName, mediaUrl)
+      const fullMediaUrl = `${mediaType}::${mediaUrl}`
+      const hash = await registerParticipant(
+        currentCompId,
+        candidateWallet as `0x${string}`,
+        projectName,
+        creatorName,
+        fullMediaUrl
+      )
       setPostulateResult({
         success: true,
         message: '¡Postulación enviada con éxito! Esperando confirmación...',
@@ -292,6 +317,8 @@ export default function Home() {
       setProjectName('')
       setCreatorName('')
       setMediaUrl('')
+      setCandidateWallet(address || '')
+      setMediaType('youtube')
       
       refetchCandidates()
       refetchCandidatesMetadata()
@@ -633,6 +660,17 @@ export default function Home() {
                         />
                       </div>
 
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descripción del Concurso</label>
+                        <textarea
+                          placeholder="Describe el concurso, las reglas o el formato del contenido..."
+                          value={concursoDescription}
+                          onChange={(e) => setConcursoDescription(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition resize-none h-16"
+                          required
+                        />
+                      </div>
+
                       <button
                         type="submit"
                         disabled={createLoading}
@@ -773,22 +811,32 @@ export default function Home() {
                 <div className="pt-4 max-w-lg mx-auto">
                   <div className="bg-slate-950/60 p-6 rounded-2xl border border-slate-900 space-y-4 text-left">
                     <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest font-mono">// CREAR NUEVO CONCURSO</h4>
-                    <form onSubmit={handleCreateConcurso} className="flex flex-col sm:flex-row gap-3 items-end">
-                      <div className="w-full space-y-1">
+                    <form onSubmit={handleCreateConcurso} className="space-y-3">
+                      <div className="space-y-1">
                         <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre del Concurso</label>
                         <input
                           type="text"
-                          placeholder="Ej. Mi Nuevo Podcast"
+                          placeholder="Ej. Mi Nuevo Concurso"
                           value={concursoTitle}
                           onChange={(e) => setConcursoTitle(e.target.value)}
                           className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
                           required
                         />
                       </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Descripción</label>
+                        <textarea
+                          placeholder="Escribe una descripción para este concurso..."
+                          value={concursoDescription}
+                          onChange={(e) => setConcursoDescription(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition resize-none h-16"
+                          required
+                        />
+                      </div>
                       <button
                         type="submit"
                         disabled={createLoading}
-                        className="w-full sm:w-auto rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-2.5 px-4 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 whitespace-nowrap shadow-lg shadow-[#836EFD]/25"
+                        className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-2.5 px-4 text-xs font-black text-white transition duration-200 active:scale-95 disabled:opacity-50 shadow-lg shadow-[#836EFD]/25"
                       >
                         {createLoading ? 'Creando...' : 'Crear'}
                       </button>
@@ -821,10 +869,20 @@ export default function Home() {
                     <label className="text-xs font-bold text-slate-400 uppercase">Nombre del Concurso</label>
                     <input
                       type="text"
-                      placeholder="Ej. Podcast Battle de Monad #1"
+                      placeholder="Ej. Concurso de Proyectos #1"
                       value={concursoTitle}
                       onChange={(e) => setConcursoTitle(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase">Descripción</label>
+                    <textarea
+                      placeholder="Escribe una descripción..."
+                      value={concursoDescription}
+                      onChange={(e) => setConcursoDescription(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] transition resize-none h-20"
                       required
                     />
                   </div>
@@ -869,15 +927,25 @@ export default function Home() {
                     ℹ️ Esta competencia ha finalizado. Puedes crear una nueva competencia si lo deseas (recibirá el siguiente PIN disponible).
                   </div>
 
-                  <form onSubmit={handleCreateConcurso} className="grid gap-4 md:grid-cols-3 items-end">
-                    <div className="md:col-span-2 space-y-2">
+                  <form onSubmit={handleCreateConcurso} className="space-y-3">
+                    <div className="space-y-1">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre del Concurso</label>
                       <input
                         type="text"
-                        placeholder="Ej. Podcast Battle de Monad #2"
+                        placeholder="Ej. Concurso de Proyectos #2"
                         value={concursoTitle}
                         onChange={(e) => setConcursoTitle(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Descripción</label>
+                      <textarea
+                        placeholder="Describe el nuevo concurso..."
+                        value={concursoDescription}
+                        onChange={(e) => setConcursoDescription(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-[#836EFD] focus:ring-1 focus:ring-[#836EFD]/50 transition resize-none h-16"
                         required
                       />
                     </div>
@@ -917,6 +985,24 @@ export default function Home() {
                     
                     <form onSubmit={handlePostulateContent} className="space-y-3">
                       <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Wallet del Competidor</label>
+                        <input
+                          type="text"
+                          placeholder="0x..."
+                          value={candidateWallet}
+                          onChange={(e) => setCandidateWallet(e.target.value)}
+                          disabled={address?.toLowerCase() !== compDetails.host.toLowerCase()}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+                          required
+                        />
+                        <p className="text-[9px] text-slate-500">
+                          {address?.toLowerCase() === compDetails.host.toLowerCase()
+                            ? "✓ Como Host, puedes ingresar cualquier dirección de wallet para agregar competidores."
+                            : "🔒 Solo puedes postular tu propio proyecto con tu wallet actual."}
+                        </p>
+                      </div>
+
+                      <div className="space-y-1">
                         <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre del Proyecto</label>
                         <input
                           type="text"
@@ -938,6 +1024,20 @@ export default function Home() {
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
                           required
                         />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Tipo de Multimedia</label>
+                        <select
+                          value={mediaType}
+                          onChange={(e) => setMediaType(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
+                        >
+                          <option value="youtube">Enlace de YouTube</option>
+                          <option value="audio">Archivo de Audio (.mp3, .wav, .ogg, etc.)</option>
+                          <option value="video">Archivo de Video (.mp4, .webm, etc.)</option>
+                          <option value="image">Imagen (.png, .jpg, .gif, .webp, etc.)</option>
+                        </select>
                       </div>
 
                       <div className="space-y-1">
@@ -1049,13 +1149,26 @@ export default function Home() {
             <section className="flex flex-col md:flex-row items-center justify-between gap-8 bg-slate-900/10 border border-slate-800/40 rounded-3xl p-6 md:p-8 relative overflow-hidden">
               <div className="absolute top-0 right-0 h-[1px] w-[30%] bg-gradient-to-r from-transparent via-[#836EFD]/40 to-transparent" />
               
-              <div className="space-y-2 text-center md:text-left">
-                <h2 className="text-2xl md:text-3xl font-extrabold text-white">
-                  Concurso #{compDetails.id.toString()}: {compDetails.title}
-                </h2>
-                <p className="text-sm text-slate-400 max-w-lg leading-relaxed">
+              <div className="space-y-3 text-center md:text-left">
+                <div>
+                  <h2 className="text-2xl md:text-3xl font-extrabold text-white">
+                    Concurso #{compDetails.id.toString()}: {compDetails.title}
+                  </h2>
+                  <p className="text-[10px] text-[#836EFD] font-mono mt-0.5">
+                    Organizado por: <span className="font-bold">{compDetails.host.slice(0, 6)}...{compDetails.host.slice(-4)}</span>
+                  </p>
+                </div>
+                
+                {compDetails.description && (
+                  <div className="text-xs text-slate-300 bg-slate-950/40 border border-slate-800/60 rounded-xl p-3 leading-relaxed max-w-xl text-left">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 font-mono block mb-1">Descripción del Torneo</span>
+                    {compDetails.description}
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-400 max-w-lg leading-relaxed">
                   {compDetails.state === 0 
-                    ? "Fase de postulación y registro de creadores. Agrega tu proyecto multimedia arriba."
+                    ? "Fase de postulación y registro. Agrega proyectos al concurso arriba."
                     : compDetails.state === 1
                       ? "Fase de votación activa. ¡Vota por tu favorito para depositar la tarifa de entrada de 0.1 MONAD y ganar tu parte del pozo!"
                       : "La competencia ha finalizado. Ve el podio revelado y reclama tus ganancias a continuación."}
@@ -1064,8 +1177,18 @@ export default function Home() {
 
               {/* Countdown timer & Total Pool wrapper */}
               <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 flex-shrink-0">
+                {/* Localized finalization date */}
+                <div className="text-center sm:text-right space-y-1">
+                  <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Finalización</p>
+                  <p className="text-xs font-mono text-slate-300 font-bold whitespace-nowrap">
+                    {compDetails.endTime > 0n 
+                      ? new Date(Number(compDetails.endTime) * 1000).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
+                      : 'Pendiente de inicio'}
+                  </p>
+                </div>
+
                 {/* Highlighted Total Pool display */}
-                <div className="text-center sm:text-left sm:border-r border-slate-800 sm:pr-8 space-y-1">
+                <div className="text-center sm:text-left sm:border-l sm:border-r border-slate-800 sm:px-8 space-y-1">
                   <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Pozo Total</p>
                   <p className="text-xl sm:text-2xl font-black text-[#836EFD] font-mono leading-none tracking-tight">
                     {totalPoolNumber.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MONAD

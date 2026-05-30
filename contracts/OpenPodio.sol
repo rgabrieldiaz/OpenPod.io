@@ -20,6 +20,7 @@ contract OpenPodio {
     struct Competition {
         uint256 id;
         string title;
+        string description;
         address host;
         uint256 endTime;
         uint256 totalPool;
@@ -78,13 +79,14 @@ contract OpenPodio {
      * @notice Creates a new decentralized audio/podcast competition.
      * @param _title Title of the podcast episode/competition.
      */
-    function createConcurso(string calldata _title) external returns (uint256) {
+    function createConcurso(string calldata _title, string calldata _description) external returns (uint256) {
         competitionCount++;
         uint256 newId = competitionCount;
         
         Competition storage comp = competitions[newId];
         comp.id = newId;
         comp.title = _title;
+        comp.description = _description;
         comp.host = msg.sender;
         comp.state = State.Upcoming;
 
@@ -101,6 +103,7 @@ contract OpenPodio {
      */
     function registerParticipant(
         uint256 _competitionId,
+        address _candidate,
         string calldata _projectName,
         string calldata _creatorName,
         string calldata _mediaUrl
@@ -108,18 +111,24 @@ contract OpenPodio {
         Competition storage comp = competitions[_competitionId];
         require(comp.id == _competitionId, "Competition does not exist");
         require(comp.state == State.Upcoming, "Registration is not open");
-        require(!hasRegistered[_competitionId][msg.sender], "Already registered");
+        
+        // If the caller is not the host, they can only register themselves
+        if (msg.sender != comp.host) {
+            require(msg.sender == _candidate, "Only host can register other wallets");
+        }
+
+        require(!hasRegistered[_competitionId][_candidate], "Already registered");
         require(bytes(_projectName).length > 0, "Project name cannot be empty");
         require(bytes(_creatorName).length > 0, "Creator name cannot be empty");
         require(bytes(_mediaUrl).length > 0, "Media URL cannot be empty");
 
-        hasRegistered[_competitionId][msg.sender] = true;
-        candidateProjectName[_competitionId][msg.sender] = _projectName;
-        candidateCreatorName[_competitionId][msg.sender] = _creatorName;
-        candidateMediaUri[_competitionId][msg.sender] = _mediaUrl;
-        comp.candidates.push(msg.sender);
+        hasRegistered[_competitionId][_candidate] = true;
+        candidateProjectName[_competitionId][_candidate] = _projectName;
+        candidateCreatorName[_competitionId][_candidate] = _creatorName;
+        candidateMediaUri[_competitionId][_candidate] = _mediaUrl;
+        comp.candidates.push(_candidate);
 
-        emit ParticipantRegistered(_competitionId, msg.sender, _projectName, _creatorName, _mediaUrl);
+        emit ParticipantRegistered(_competitionId, _candidate, _projectName, _creatorName, _mediaUrl);
     }
 
     /**

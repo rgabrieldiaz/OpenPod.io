@@ -33,7 +33,7 @@ contract OpenPodioTest is Test {
 
     function test_CreateConcurso() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Una descripcion de prueba");
         
         assertEq(newId, 1);
         assertEq(openPodio.competitionCount(), 1);
@@ -41,6 +41,7 @@ contract OpenPodioTest is Test {
         (
             uint256 id,
             string memory title,
+            string memory description,
             address compHost,
             uint256 compEndTime,
             uint256 totalPool,
@@ -52,6 +53,7 @@ contract OpenPodioTest is Test {
 
         assertEq(id, 1);
         assertEq(title, "Demo Hackathon #1");
+        assertEq(description, "Una descripcion de prueba");
         assertEq(compHost, host);
         assertEq(compEndTime, 0);
         assertEq(totalPool, 0);
@@ -63,15 +65,15 @@ contract OpenPodioTest is Test {
 
     function test_RegisterParticipant() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Desc");
 
         // Register candidate 1
         vm.prank(candidate1);
-        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge Studios", "https://example.com/video.mp4");
+        openPodio.registerParticipant(newId, candidate1, "Neon Horizons", "Pixel Forge Studios", "https://example.com/video.mp4");
 
         // Register candidate 2
         vm.prank(candidate2);
-        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/audio.mp3");
+        openPodio.registerParticipant(newId, candidate2, "Parallel Pulse", "EVM Orchestra", "https://example.com/audio.mp3");
 
         assertTrue(openPodio.hasRegistered(newId, candidate1));
         assertTrue(openPodio.hasRegistered(newId, candidate2));
@@ -89,43 +91,43 @@ contract OpenPodioTest is Test {
 
     function test_RevertRegisterDuplicate() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Desc");
 
         vm.startPrank(candidate1);
-        openPodio.registerParticipant(newId, "Project 1", "Creator 1", "https://example.com/1");
+        openPodio.registerParticipant(newId, candidate1, "Project 1", "Creator 1", "https://example.com/1");
         
         vm.expectRevert("Already registered");
-        openPodio.registerParticipant(newId, "Project 2", "Creator 2", "https://example.com/2");
+        openPodio.registerParticipant(newId, candidate1, "Project 2", "Creator 2", "https://example.com/2");
         vm.stopPrank();
     }
 
     function test_StartVoting() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Desc");
 
         vm.prank(candidate1);
-        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        openPodio.registerParticipant(newId, candidate1, "Neon Horizons", "Pixel Forge", "https://example.com/1");
         vm.prank(candidate2);
-        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+        openPodio.registerParticipant(newId, candidate2, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
 
         vm.prank(host);
         openPodio.startVoting(newId, durationInMinutes);
 
-        (,,,,,,,,OpenPodio.State state) = openPodio.competitions(newId);
+        (,,,,,,,,,OpenPodio.State state) = openPodio.competitions(newId);
         assertTrue(state == OpenPodio.State.Active);
 
-        (,,,uint256 endTime,,,,,) = openPodio.competitions(newId);
+        (,,,,uint256 endTime,,,,,) = openPodio.competitions(newId);
         assertEq(endTime, block.timestamp + (durationInMinutes * 1 minutes));
     }
 
     function test_RevertStartVotingNotHost() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Desc");
 
         vm.prank(candidate1);
-        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        openPodio.registerParticipant(newId, candidate1, "Neon Horizons", "Pixel Forge", "https://example.com/1");
         vm.prank(candidate2);
-        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+        openPodio.registerParticipant(newId, candidate2, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
 
         vm.prank(alice);
         vm.expectRevert("Only the host can start voting");
@@ -134,10 +136,10 @@ contract OpenPodioTest is Test {
 
     function test_RevertStartVotingInsufficientCandidates() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Desc");
 
         vm.prank(candidate1);
-        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        openPodio.registerParticipant(newId, candidate1, "Neon Horizons", "Pixel Forge", "https://example.com/1");
 
         vm.prank(host);
         vm.expectRevert("Must have at least two candidates to start");
@@ -146,12 +148,12 @@ contract OpenPodioTest is Test {
 
     function test_VoteValid() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Desc");
 
         vm.prank(candidate1);
-        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        openPodio.registerParticipant(newId, candidate1, "Neon Horizons", "Pixel Forge", "https://example.com/1");
         vm.prank(candidate2);
-        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+        openPodio.registerParticipant(newId, candidate2, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
 
         vm.prank(host);
         openPodio.startVoting(newId, durationInMinutes);
@@ -162,18 +164,18 @@ contract OpenPodioTest is Test {
         assertTrue(openPodio.hasVoted(newId, alice));
         assertEq(openPodio.voterSelection(newId, alice), candidate1);
 
-        (,,,,uint256 totalPool,,,,) = openPodio.competitions(newId);
+        (,,,,,uint256 totalPool,,,,) = openPodio.competitions(newId);
         assertEq(totalPool, 0.1 ether);
     }
 
     function test_ResolveAndClaim() public {
         vm.prank(host);
-        uint256 newId = openPodio.createConcurso("Demo Hackathon #1");
+        uint256 newId = openPodio.createConcurso("Demo Hackathon #1", "Desc");
 
         vm.prank(candidate1);
-        openPodio.registerParticipant(newId, "Neon Horizons", "Pixel Forge", "https://example.com/1");
+        openPodio.registerParticipant(newId, candidate1, "Neon Horizons", "Pixel Forge", "https://example.com/1");
         vm.prank(candidate2);
-        openPodio.registerParticipant(newId, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
+        openPodio.registerParticipant(newId, candidate2, "Parallel Pulse", "EVM Orchestra", "https://example.com/2");
 
         vm.prank(host);
         openPodio.startVoting(newId, durationInMinutes);
@@ -187,13 +189,13 @@ contract OpenPodioTest is Test {
         vm.prank(charlie);
         openPodio.vote{value: 0.1 ether}(newId, candidate2);
 
-        (,,,uint256 endTime,,,,,) = openPodio.competitions(newId);
+        (,,,,uint256 endTime,,,,,) = openPodio.competitions(newId);
         vm.warp(endTime + 1);
 
         uint256 creatorBalanceBefore = candidate1.balance;
         openPodio.resolveCompetition(newId);
 
-        (,,,,,,uint256 rewardPerVoter,bool resolved, OpenPodio.State state) = openPodio.competitions(newId);
+        (,,,,,,,uint256 rewardPerVoter,bool resolved, OpenPodio.State state) = openPodio.competitions(newId);
         assertTrue(resolved);
         assertTrue(state == OpenPodio.State.Ended);
         assertEq(candidate1.balance - creatorBalanceBefore, 0.24 ether); // 80% of 0.3 MONAD
