@@ -2,7 +2,8 @@
 
 import { useBalance, usePublicClient } from 'wagmi'
 import { useState, useEffect } from 'react'
-import { formatUnits } from 'viem'
+import { formatUnits, decodeEventLog } from 'viem'
+import { openPodioAbi } from '../config/abi'
 import { useMonadProvider } from '../hooks/useMonadProvider'
 import { CountdownTimer } from '../components/CountdownTimer'
 import { MediaCard } from '../components/MediaCard'
@@ -252,9 +253,29 @@ export default function Home() {
       setConcursoTitle('')
       setConcursoDescription('')
       
+      let newPin: bigint | undefined = undefined
+
       // Wait for confirmation on the blockchain
       if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash })
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        
+        // Try to decode the ConcursoCreated event from the transaction receipt logs
+        for (const log of receipt.logs) {
+          try {
+            const decoded = decodeEventLog({
+              abi: openPodioAbi,
+              eventName: 'ConcursoCreated',
+              topics: log.topics,
+              data: log.data,
+            })
+            if (decoded && decoded.args) {
+              newPin = (decoded.args as any).competitionId as bigint
+              break
+            }
+          } catch (e) {
+            // Ignore if logs do not match the event signature
+          }
+        }
       }
       
       setCreateResult({
@@ -263,14 +284,21 @@ export default function Home() {
         txHash: hash,
       })
 
-      // Fetch the generated 6-digit PIN from the contract
-      const latestResult = await refetchLatestId()
-      const newPin = latestResult.data as bigint | undefined
       if (newPin) {
         setSelectedCompId(newPin)
         setShowLanding(false)
         refetchCompDetails()
         refetchCandidates()
+      } else {
+        // Fallback: Fetch the generated 6-digit PIN from the contract state
+        const latestResult = await refetchLatestId()
+        const fetchedPin = latestResult.data as bigint | undefined
+        if (fetchedPin) {
+          setSelectedCompId(fetchedPin)
+          setShowLanding(false)
+          refetchCompDetails()
+          refetchCandidates()
+        }
       }
       refetchCompCount()
     } catch (err: any) {
