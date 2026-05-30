@@ -138,6 +138,10 @@ export default function Home() {
   const [mediaType, setMediaType] = useState('youtube')
   const [postulateLoading, setPostulateLoading] = useState(false)
   const [postulateResult, setPostulateResult] = useState<{ success: boolean; message: string; txHash?: string } | null>(null)
+  const [showAddParticipant, setShowAddParticipant] = useState(false)
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  const [projectOrder, setProjectOrder] = useState<number[]>([])
 
   // Default candidate wallet to logged in address
   useEffect(() => {
@@ -145,6 +149,13 @@ export default function Home() {
       setCandidateWallet(address)
     }
   }, [address])
+
+  // Sync projectOrder when projects change
+  useEffect(() => {
+    if (projects && projects.length > 0) {
+      setProjectOrder(projects.map((_: unknown, i: number) => i))
+    }
+  }, [projects])
 
   const [votingDuration, setVotingDuration] = useState('10') // default 10 mins
   const [startVotingLoading, setStartVotingLoading] = useState(false)
@@ -1028,160 +1039,207 @@ export default function Home() {
 
               {/* State B: Competition exists in Upcoming state */}
               {compDetails.state === 0 && (
-                <div className="grid gap-6 md:grid-cols-2">
-                  {/* Left Column: Postulate Form */}
-                  <div className="space-y-4 border-r border-slate-800/60 pr-0 md:pr-6">
-                    <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wide font-mono">// POSTULAR MI CONTENIDO</h4>
-                    <p className="text-xs text-slate-400">Postula tu proyecto multimedia a este concurso (archivo .mp3, .wav, .mp4, o enlace de YouTube).</p>
-                    
-                    <form onSubmit={handlePostulateContent} className="space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Wallet del Competidor</label>
-                        <input
-                          type="text"
-                          placeholder="0x..."
-                          value={candidateWallet}
-                          onChange={(e) => setCandidateWallet(e.target.value)}
-                          disabled={address?.toLowerCase() !== compDetails.host.toLowerCase()}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition disabled:opacity-60 disabled:cursor-not-allowed font-mono"
-                          required
-                        />
-                        <p className="text-[9px] text-slate-500">
-                          {address?.toLowerCase() === compDetails.host.toLowerCase()
-                            ? "✓ Como Host, puedes ingresar cualquier dirección de wallet para agregar competidores."
-                            : "🔒 Solo puedes postular tu propio proyecto con tu wallet actual."}
-                        </p>
+                <div className="space-y-5">
+                  {/* Header: Participants count + Add button */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-[#836EFD]/15 flex items-center justify-center">
+                          <svg className="w-4 h-4 text-[#836EFD]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white uppercase tracking-wide font-mono">Participantes</h4>
+                          <p className="text-[10px] text-slate-500">{candidates?.length || 0} registrados</p>
+                        </div>
                       </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre del Proyecto</label>
-                        <input
-                          type="text"
-                          placeholder="Ej. Parallel Soundscapes"
-                          value={projectName}
-                          onChange={(e) => setProjectName(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Creador / Autor</label>
-                        <input
-                          type="text"
-                          placeholder="Ej. DJ Monadist"
-                          value={creatorName}
-                          onChange={(e) => setCreatorName(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Tipo de Multimedia</label>
-                        <select
-                          value={mediaType}
-                          onChange={(e) => setMediaType(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                        >
-                          <option value="youtube">Enlace de YouTube</option>
-                          <option value="audio">Archivo de Audio (.mp3, .wav, .ogg, etc.)</option>
-                          <option value="video">Archivo de Video (.mp4, .webm, etc.)</option>
-                          <option value="image">Imagen (.png, .jpg, .gif, .webp, etc.)</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">URL de Contenido (Obligatorio)</label>
-                        <input
-                          type="url"
-                          placeholder="Ej. https://www.youtube.com/watch?v=... o .mp3/.mp4"
-                          value={mediaUrl}
-                          onChange={(e) => setMediaUrl(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
-                          required
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={postulateLoading}
-                        className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/95 py-2.5 text-xs font-black text-white transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/20"
-                      >
-                        {postulateLoading ? (
-                          <>
-                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            <span>Registrando...</span>
-                          </>
-                        ) : (
-                          <span>Postular mi Contenido</span>
-                        )}
-                      </button>
-                    </form>
-
-                    {postulateResult && (
-                      <div className={`p-2.5 rounded-xl text-[11px] border ${
-                        postulateResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                      }`}>
-                        {postulateResult.message}
-                      </div>
-                    )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddParticipant(!showAddParticipant)}
+                      className={`group flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all duration-300 active:scale-95 ${
+                        showAddParticipant 
+                          ? 'bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20' 
+                          : 'bg-[#836EFD] text-white hover:bg-[#836EFD]/90 shadow-lg shadow-[#836EFD]/25'
+                      }`}
+                    >
+                      <svg className={`w-4 h-4 transition-transform duration-300 ${showAddParticipant ? 'rotate-45' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      {showAddParticipant ? 'Cancelar' : 'Agregar'}
+                    </button>
                   </div>
 
-                  {/* Right Column: Host Controls / Start Voting */}
-                  <div className="space-y-4 flex flex-col justify-between">
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wide font-mono">// INICIAR PERIODO DE VOTACIÓN</h4>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Solo el Host de este concurso ({compDetails.host.slice(0, 6)}...{compDetails.host.slice(-4)}) puede iniciar la fase de votación. 
-                        Requiere al menos 2 candidatos postulados. (Registrados: {candidates?.length || 0})
-                      </p>
-                    </div>
+                  {/* Collapsible Add Participant Form */}
+                  <div className={`overflow-hidden transition-all duration-400 ease-in-out ${showAddParticipant ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                    <div className="rounded-2xl border border-[#836EFD]/20 bg-[#836EFD]/5 p-5 space-y-4">
+                      <div className="flex items-center gap-2 text-xs text-[#836EFD] font-bold uppercase tracking-wide font-mono">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                        </svg>
+                        Nuevo Participante
+                      </div>
 
-                    <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-900 space-y-4">
-                      {address?.toLowerCase() === compDetails.host.toLowerCase() ? (
-                        <form onSubmit={handleStartVoting} className="space-y-3">
+                      <form onSubmit={handlePostulateContent} className="space-y-3">
+                        {/* Row 1: Wallet + Project Name */}
+                        <div className="grid gap-3 md:grid-cols-2">
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Duración de la Votación (en minutos)</label>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Wallet del Competidor</label>
+                            <input
+                              type="text"
+                              placeholder="0x..."
+                              value={candidateWallet}
+                              onChange={(e) => setCandidateWallet(e.target.value)}
+                              disabled={address?.toLowerCase() !== compDetails.host.toLowerCase()}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+                              required
+                            />
+                            <p className="text-[9px] text-slate-500">
+                              {address?.toLowerCase() === compDetails.host.toLowerCase()
+                                ? "✓ Host: puedes agregar cualquier wallet."
+                                : "🔒 Solo puedes postular tu propia wallet."}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre del Proyecto</label>
+                            <input
+                              type="text"
+                              placeholder="Ej. Parallel Soundscapes"
+                              value={projectName}
+                              onChange={(e) => setProjectName(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        {/* Row 2: Creator + Media Type */}
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Creador / Autor</label>
+                            <input
+                              type="text"
+                              placeholder="Ej. DJ Monadist"
+                              value={creatorName}
+                              onChange={(e) => setCreatorName(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
+                              required
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Tipo de Multimedia</label>
+                            <select
+                              value={mediaType}
+                              onChange={(e) => setMediaType(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
+                            >
+                              <option value="youtube">YouTube</option>
+                              <option value="audio">Audio (.mp3, .wav)</option>
+                              <option value="video">Video (.mp4, .webm)</option>
+                              <option value="image">Imagen (.png, .jpg, .gif)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Row 3: Media URL */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">URL de Contenido</label>
+                          <input
+                            type="url"
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            value={mediaUrl}
+                            onChange={(e) => setMediaUrl(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
+                            required
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={postulateLoading}
+                          className="w-full rounded-xl bg-[#836EFD] hover:bg-[#836EFD]/90 py-2.5 text-xs font-black text-white transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#836EFD]/20"
+                        >
+                          {postulateLoading ? (
+                            <>
+                              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                              <span>Registrando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                              </svg>
+                              <span>Agregar Participante</span>
+                            </>
+                          )}
+                        </button>
+                      </form>
+
+                      {postulateResult && (
+                        <div className={`p-2.5 rounded-xl text-[11px] border ${
+                          postulateResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                        }`}>
+                          {postulateResult.message}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Host Controls: Start Voting — compact bottom bar */}
+                  <div className="rounded-2xl border border-slate-800/60 bg-slate-950/50 p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                      <div className="flex-1 space-y-1">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide font-mono flex items-center gap-1.5">
+                          <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Iniciar Votación
+                        </h4>
+                        <p className="text-[10px] text-slate-500">
+                          {address?.toLowerCase() === compDetails.host.toLowerCase()
+                            ? `Requiere mín. 2 participantes (actual: ${candidates?.length || 0})`
+                            : '🔒 Solo el host puede iniciar la votación.'}
+                        </p>
+                      </div>
+                      {address?.toLowerCase() === compDetails.host.toLowerCase() ? (
+                        <form onSubmit={handleStartVoting} className="flex items-center gap-3 flex-shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">Duración (min)</label>
                             <input
                               type="number"
                               min="1"
                               value={votingDuration}
                               onChange={(e) => setVotingDuration(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition"
+                              className="w-16 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-slate-100 text-xs focus:outline-none focus:border-[#836EFD] transition text-center"
                               required
                             />
                           </div>
-
                           <button
                             type="submit"
                             disabled={startVotingLoading || (candidates?.length || 0) < 2}
-                            className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 py-2.5 text-xs font-black text-white transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2"
+                            className="rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 px-5 py-2 text-xs font-black text-white transition active:scale-95 disabled:opacity-30 flex items-center gap-2 whitespace-nowrap"
                           >
                             {startVotingLoading ? (
                               <>
                                 <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                <span>Iniciando Votación...</span>
+                                <span>Iniciando...</span>
                               </>
                             ) : (
-                              <span>Iniciar Periodo de Votación</span>
+                              <span>▶ Iniciar</span>
                             )}
                           </button>
                         </form>
-                      ) : (
-                        <div className="text-xs text-slate-500 text-center py-4">
-                          🔒 Esperando a que el host inicie el periodo de votación.
-                        </div>
-                      )}
-
-                      {startVotingResult && (
-                        <div className={`p-2.5 rounded-xl text-[11px] border ${
-                          startVotingResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                        }`}>
-                          {startVotingResult.message}
-                        </div>
-                      )}
+                      ) : null}
                     </div>
+                    {startVotingResult && (
+                      <div className={`mt-3 p-2.5 rounded-xl text-[11px] border ${
+                        startVotingResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                      }`}>
+                        {startVotingResult.message}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1254,7 +1312,7 @@ export default function Home() {
             </section>
           )}
 
-          {/* Grid Panel: Participating Projects Media Cards */}
+          {/* Grid Panel: Participating Projects — Dual Mode */}
           {doesCompExist && (
             <section className="space-y-6">
               <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
@@ -1273,33 +1331,123 @@ export default function Home() {
               </div>
 
               {projects.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-3">
-                  {projects.map((project, i) => (
-                    <MediaCard
-                      key={i}
-                      title={project.title}
-                      author={project.author}
-                      description={project.description}
-                      src={project.src}
-                      candidateAddress={project.candidateAddress}
-                      onVote={handleVote}
-                      isVoting={isVoting}
-                      isConnected={isConnected}
-                      isWrongNetwork={isWrongNetwork}
-                      odds={project.odds}
-                      highlightOdds={project.highlightOdds}
-                      status={getCompStatus()}
-                    />
-                  ))}
-                </div>
+                <>
+                  {/* State 0 (Upcoming): Draggable compact list */}
+                  {compDetails && compDetails.state === 0 ? (
+                    <div className="space-y-2">
+                      {(projectOrder.length === projects.length ? projectOrder : projects.map((_: unknown, i: number) => i)).map((realIdx: number, visualPos: number) => {
+                        const project = projects[realIdx]
+                        if (!project) return null
+                        return (
+                          <div
+                            key={realIdx}
+                            draggable
+                            onDragStart={() => setDragIdx(visualPos)}
+                            onDragOver={(e) => { e.preventDefault(); setDragOverIdx(visualPos) }}
+                            onDragEnd={() => {
+                              if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
+                                setProjectOrder(prev => {
+                                  const updated = [...prev]
+                                  const [moved] = updated.splice(dragIdx, 1)
+                                  updated.splice(dragOverIdx, 0, moved)
+                                  return updated
+                                })
+                              }
+                              setDragIdx(null)
+                              setDragOverIdx(null)
+                            }}
+                            onDragLeave={() => setDragOverIdx(null)}
+                            className={`group flex items-center gap-3 rounded-2xl border p-3 sm:p-4 transition-all duration-200 cursor-grab active:cursor-grabbing ${
+                              dragOverIdx === visualPos 
+                                ? 'border-[#836EFD]/60 bg-[#836EFD]/10 scale-[1.01]' 
+                                : dragIdx === visualPos
+                                  ? 'opacity-40 border-slate-800 bg-slate-950/40'
+                                  : 'border-slate-800/60 bg-slate-950/30 hover:border-slate-700 hover:bg-slate-900/40'
+                            }`}
+                          >
+                            {/* Drag grip handle */}
+                            <div className="flex flex-col gap-[3px] opacity-30 group-hover:opacity-60 transition flex-shrink-0">
+                              <div className="flex gap-[3px]">
+                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
+                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
+                              </div>
+                              <div className="flex gap-[3px]">
+                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
+                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
+                              </div>
+                              <div className="flex gap-[3px]">
+                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
+                                <div className="w-[4px] h-[4px] rounded-full bg-slate-400" />
+                              </div>
+                            </div>
+
+                            {/* Position number */}
+                            <div className="w-7 h-7 rounded-lg bg-[#836EFD]/15 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-black text-[#836EFD] font-mono">{visualPos + 1}</span>
+                            </div>
+
+                            {/* Project info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-white truncate">{project.title}</p>
+                              <p className="text-[11px] text-slate-400 truncate">
+                                <span className="text-slate-500">por</span> {project.author}
+                                {project.candidateAddress && (
+                                  <span className="text-slate-600 ml-2 font-mono">
+                                    {project.candidateAddress.slice(0, 6)}...{project.candidateAddress.slice(-4)}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+
+                            {/* Media type badge */}
+                            <div className="flex-shrink-0 hidden sm:flex items-center gap-1.5">
+                              {project.src?.includes('youtube') || project.src?.includes('youtu.be') ? (
+                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">YT</span>
+                              ) : project.src?.match(/\.(mp3|wav|ogg|flac)/) ? (
+                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">Audio</span>
+                              ) : project.src?.match(/\.(mp4|webm|mov)/) ? (
+                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">Video</span>
+                              ) : project.src?.match(/\.(png|jpg|jpeg|gif|webp|svg)/) ? (
+                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">Img</span>
+                              ) : (
+                                <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-lg bg-slate-500/10 border border-slate-500/20 text-slate-400">Link</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    /* State 1 & 2: Standard MediaCard grid */
+                    <div className="grid gap-6 md:grid-cols-3">
+                      {projects.map((project, i) => (
+                        <MediaCard
+                          key={i}
+                          title={project.title}
+                          author={project.author}
+                          description={project.description}
+                          src={project.src}
+                          candidateAddress={project.candidateAddress}
+                          onVote={handleVote}
+                          isVoting={isVoting}
+                          isConnected={isConnected}
+                          isWrongNetwork={isWrongNetwork}
+                          odds={project.odds}
+                          highlightOdds={project.highlightOdds}
+                          status={getCompStatus()}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="rounded-3xl border border-slate-900 bg-slate-950/40 p-12 text-center text-slate-500">
                   <svg className="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V4a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                   </svg>
-                  <p className="text-sm font-semibold">Aún no hay creadores registrados en este concurso.</p>
+                  <p className="text-sm font-semibold">Aún no hay participantes registrados.</p>
                   {compDetails && compDetails.state === 0 && (
-                    <p className="text-xs text-slate-600 mt-1">¡Utiliza el formulario de postulación de arriba para registrar el primer proyecto!</p>
+                    <p className="text-xs text-slate-600 mt-1">¡Usa el botón &quot;+ Agregar&quot; de arriba para registrar el primer participante!</p>
                   )}
                 </div>
               )}
